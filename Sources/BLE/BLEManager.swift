@@ -26,6 +26,8 @@ final class BLEManager: NSObject, ObservableObject {
     private var pendingScan = false
     private var handshakeStep = 0
     private var handshakeResponseCount = 0
+    private var lastReadHex = ""
+    private var readRetryCount = 0
 
     private static let savedPeripheralKey = "kronaby_peripheral_uuid"
 
@@ -134,6 +136,9 @@ final class BLEManager: NSObject, ObservableObject {
         connectionState = .handshaking
         handshakeStep = 0
         handshakeResponseCount = 0
+        lastReadHex = ""
+        readRetryCount = 0
+        commandMap.removeAll()
         log("핸드셰이크 시작")
         sendNextHandshakeStep()
     }
@@ -156,8 +161,8 @@ final class BLEManager: NSObject, ObservableObject {
         peripheral?.writeValue(data, for: char, type: .withoutResponse)
         log("map_cmd(\(step)) → \(data.map { String(format: "%02X", $0) }.joined())")
 
-        // write 후 read로 응답 받기
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+        // write 후 시계가 응답 준비할 시간 확보 후 read
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
             guard let self, let p = self.peripheral, let c = self.commandChar else { return }
             self.waitingForRead = true
             p.readValue(for: c)
@@ -372,14 +377,25 @@ extension BLEManager: CBPeripheralDelegate {
 
             // command 특성에서 read 응답이 온 경우 → 다음 step 진행
             if isFromCommandChar {
+                // 이전과 같은 데이터면 아직 갱신 안 됨 — 재시도
+                if hex == lastReadHex && handshakeStep > 0 && readRetryCount < 3 {
+                    readRetryCount += 1
+                    log("같은 데이터 — \(readRetryCount)회 재시도")
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                        guard let self, let p = self.peripheral, let c = self.commandChar else { return }
+                        p.readValue(for: c)
+                    }
+                    return
+                }
+                lastReadHex = hex
+                readRetryCount = 0
                 handshakeStep += 1
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                     guard let self, self.connectionState == .handshaking else { return }
                     if self.handshakeStep <= 2 {
                         self.sendNextHandshakeStep()
                     } else {
-                        self.log("commandMap 전체: \(self.commandMap)")
-                        self.log("핸드셰이크 완료 — \(self.commandMap.count)개")
+                        self.log("핸드셰이크 완료 — commandMap \(self.commandMap.count)개")
                         self.completeSetup()
                     }
                 }
