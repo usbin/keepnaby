@@ -315,13 +315,26 @@ extension BLEManager: CBPeripheralDelegate {
                 log("맵(직접): \(commandMap.count)개")
                 foundMap = true
             }
-            // Case 2: response is {int: {string: int}} — wrapped with command ID
+            // Case 2: response is {int: {string: int}} — wrapped
             else if let outer = decoded as? [Int: Any] {
                 for (key, value) in outer {
+                    // {0: {string_name: int_id}} — name→id
                     if let innerMap = value as? [String: Int] {
                         commandMap.merge(innerMap) { _, new in new }
-                        log("맵(래핑 key=\(key)): \(commandMap.count)개")
+                        log("맵(name→id key=\(key)): \(commandMap.count)개")
                         foundMap = true
+                    }
+                    // {0: {int_id: string_name}} — id→name (실제 Kronaby 형식)
+                    else if let innerMap = value as? [Int: Any] {
+                        for (id, name) in innerMap {
+                            if let nameStr = name as? String {
+                                commandMap[nameStr] = id
+                            }
+                        }
+                        if !innerMap.isEmpty {
+                            log("맵(id→name key=\(key)): \(commandMap.count)개")
+                            foundMap = true
+                        }
                     }
                 }
             }
