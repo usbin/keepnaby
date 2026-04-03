@@ -98,18 +98,14 @@ struct ConnectionView: View {
             }
             .padding()
             .navigationTitle("Kronaby")
-            .toolbar {
-                ToolbarItemGroup(placement: .topBarLeading) {
-                    Button { showLog.toggle() } label: {
-                        Image(systemName: showLog ? "terminal.fill" : "terminal")
-                    }
+            .navigationBarItems(
+                leading: Button(action: { showLog.toggle() }) {
+                    Image(systemName: showLog ? "terminal.fill" : "terminal")
+                },
+                trailing: Button(action: { showHelp = true }) {
+                    Image(systemName: "questionmark.circle")
                 }
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    Button { showHelp = true } label: {
-                        Image(systemName: "questionmark.circle")
-                    }
-                }
-            }
+            )
             .alert("시계 페어링 초기화", isPresented: $showHelp) {
                 Button("확인", role: .cancel) {}
             } message: {
