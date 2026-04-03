@@ -47,19 +47,33 @@ struct ConnectionView: View {
 
                 // Debug log
                 if showLog {
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 2) {
-                            ForEach(Array(ble.debugLog.enumerated()), id: \.offset) { _, line in
-                                Text(line)
-                                    .font(.system(size: 11, design: .monospaced))
-                                    .foregroundStyle(.secondary)
+                    VStack(spacing: 4) {
+                        HStack {
+                            Text("디버그 로그")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Button("복사") {
+                                UIPasteboard.general.string = ble.debugLog.joined(separator: "\n")
                             }
+                            .font(.caption)
                         }
                         .padding(.horizontal, 8)
+
+                        ScrollView {
+                            LazyVStack(alignment: .leading, spacing: 2) {
+                                ForEach(Array(ble.debugLog.enumerated()), id: \.offset) { _, line in
+                                    Text(line)
+                                        .font(.system(size: 11, design: .monospaced))
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .padding(.horizontal, 8)
+                        }
+                        .frame(maxHeight: 230)
+                        .background(Color(.systemGray6))
+                        .cornerRadius(8)
                     }
-                    .frame(maxHeight: 250)
-                    .background(Color(.systemGray6))
-                    .cornerRadius(8)
                 }
 
                 Spacer()
