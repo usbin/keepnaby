@@ -30,6 +30,7 @@ final class BLEManager: NSObject, ObservableObject {
     private var readRetryCount = 0
 
     private static let savedPeripheralKey = "kronaby_peripheral_uuid"
+    private static let savedCommandMapKey = "kronaby_command_map"
 
     private func savePeripheralID(_ uuid: UUID) {
         UserDefaults.standard.set(uuid.uuidString, forKey: Self.savedPeripheralKey)
@@ -38,6 +39,15 @@ final class BLEManager: NSObject, ObservableObject {
     private func loadSavedPeripheralID() -> UUID? {
         guard let str = UserDefaults.standard.string(forKey: Self.savedPeripheralKey) else { return nil }
         return UUID(uuidString: str)
+    }
+
+    private func saveCommandMap() {
+        UserDefaults.standard.set(commandMap, forKey: Self.savedCommandMapKey)
+        log("commandMap 저장 (\(commandMap.count)개)")
+    }
+
+    private func loadSavedCommandMap() -> [String: Int]? {
+        return UserDefaults.standard.dictionary(forKey: Self.savedCommandMapKey) as? [String: Int]
     }
 
     override init() {
@@ -116,6 +126,8 @@ final class BLEManager: NSObject, ObservableObject {
     func forgetDevice() {
         disconnect()
         UserDefaults.standard.removeObject(forKey: Self.savedPeripheralKey)
+        UserDefaults.standard.removeObject(forKey: Self.savedCommandMapKey)
+        commandMap.removeAll()
         log("저장된 기기 정보 삭제")
     }
 
@@ -182,6 +194,7 @@ final class BLEManager: NSObject, ObservableObject {
             return
         }
 
+        saveCommandMap()
         sendCommand(name: "onboarding_done", value: 1)
         connectionState = .connected
         log("연결됨! 영점 조정 → 시각 설정 순서로 진행하세요.")
@@ -314,7 +327,16 @@ extension BLEManager: CBPeripheralDelegate {
         }
 
         if commandChar != nil && notifyChar != nil && connectionState == .connecting {
-            performHandshake()
+            // 저장된 commandMap이 있으면 핸드셰이크 스킵
+            if let savedMap = loadSavedCommandMap(), !savedMap.isEmpty {
+                commandMap = savedMap
+                log("저장된 commandMap 복원 (\(savedMap.count)개)")
+                sendCommand(name: "onboarding_done", value: 1)
+                connectionState = .connected
+                log("재연결 완료!")
+            } else {
+                performHandshake()
+            }
         }
     }
 
