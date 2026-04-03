@@ -122,7 +122,7 @@ final class BLEManager: NSObject, ObservableObject {
 
     private func sendNextHandshakeStep() {
         guard handshakeStep <= 2 else {
-            log("핸드셰이크 3단계 전송 완료, 응답 대기 중...")
+            log("핸드셰이크 3단계 전송 완료")
             return
         }
         guard let char = commandChar else {
@@ -133,6 +133,13 @@ final class BLEManager: NSObject, ObservableObject {
         let data = protocol_.encode(commandId: 0, value: step)
         peripheral?.writeValue(data, for: char, type: .withResponse)
         log("map_cmd(\(step)) → \(data.map { String(format: "%02X", $0) }.joined())")
+
+        // Write 후 command 특성에서 응답을 read
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self, let p = self.peripheral, let c = self.commandChar else { return }
+            p.readValue(for: c)
+            self.log("map_cmd(\(step)) read 요청")
+        }
     }
 
     private func completeSetup() {
@@ -269,7 +276,7 @@ extension BLEManager: CBPeripheralDelegate {
             }
         }
 
-        if commandChar != nil && notifyChar != nil {
+        if commandChar != nil && notifyChar != nil && connectionState == .connecting {
             performHandshake()
         }
     }
@@ -294,6 +301,7 @@ extension BLEManager: CBPeripheralDelegate {
         let decoded = protocol_.decode(data: data)
 
         if connectionState == .handshaking {
+            let isFromCommandChar = characteristic.uuid == BLEConstants.commandCharUUID
             var foundMap = false
 
             // Case 1: response is directly {string: int}
@@ -304,39 +312,31 @@ extension BLEManager: CBPeripheralDelegate {
             }
             // Case 2: response is {int: {string: int}} — wrapped with command ID
             else if let outer = decoded as? [Int: Any] {
-                for (_, value) in outer {
+                for (key, value) in outer {
                     if let innerMap = value as? [String: Int] {
                         commandMap.merge(innerMap) { _, new in new }
-                        log("맵(래핑): \(commandMap.count)개")
+                        log("맵(래핑 key=\(key)): \(commandMap.count)개")
                         foundMap = true
                     }
                 }
             }
 
             if !foundMap {
-                log("핸드셰이크 응답 (맵 아님): \(String(describing: decoded))")
+                log("응답(맵 아님) [\(isFromCommandChar ? "cmd" : "ntf")]: \(String(describing: decoded))")
             }
 
-            handshakeResponseCount += 1
-
-            if handshakeStep <= 2 {
-                // 현재 step 응답 받음 → 다음 step 전송
+            // command 특성에서 read 응답이 온 경우 → 다음 step 진행
+            if isFromCommandChar {
                 handshakeStep += 1
-                // 약간의 딜레이 후 다음 전송
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
                     guard let self, self.connectionState == .handshaking else { return }
                     if self.handshakeStep <= 2 {
                         self.sendNextHandshakeStep()
                     } else {
                         self.log("commandMap 전체: \(self.commandMap)")
-                        self.log("핸드셰이크 3단계 완료 — \(self.commandMap.count)개")
+                        self.log("핸드셰이크 완료 — \(self.commandMap.count)개")
                         self.completeSetup()
                     }
-                }
-            } else {
-                log("추가 응답 수신, commandMap: \(commandMap.count)개")
-                if handshakeStep > 2 {
-                    completeSetup()
                 }
             }
         } else if connectionState == .connected {
