@@ -24,6 +24,8 @@ final class BLEManager: NSObject, ObservableObject {
 
     private let protocol_ = KronabyProtocol()
     private var pendingScan = false
+    private var handshakeStep = 0
+    private var handshakeResponseCount = 0
 
     override init() {
         super.init()
@@ -112,17 +114,25 @@ final class BLEManager: NSObject, ObservableObject {
 
     private func performHandshake() {
         connectionState = .handshaking
+        handshakeStep = 0
+        handshakeResponseCount = 0
+        log("핸드셰이크 시작")
+        sendNextHandshakeStep()
+    }
+
+    private func sendNextHandshakeStep() {
+        guard handshakeStep <= 2 else {
+            log("핸드셰이크 3단계 전송 완료, 응답 대기 중...")
+            return
+        }
         guard let char = commandChar else {
             log("핸드셰이크 실패: commandChar 없음")
             return
         }
-        log("핸드셰이크 시작")
-
-        for i in 0...2 {
-            let data = protocol_.encode(commandId: 0, value: i)
-            peripheral?.writeValue(data, for: char, type: .withResponse)
-            log("map_cmd(\(i)) → \(data.map { String(format: "%02X", $0) }.joined())")
-        }
+        let step = handshakeStep
+        let data = protocol_.encode(commandId: 0, value: step)
+        peripheral?.writeValue(data, for: char, type: .withResponse)
+        log("map_cmd(\(step)) → \(data.map { String(format: "%02X", $0) }.joined())")
     }
 
     private func completeSetup() {
@@ -264,6 +274,14 @@ extension BLEManager: CBPeripheralDelegate {
         }
     }
 
+    func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
+        if let error = error {
+            log("쓰기 에러 [\(characteristic.uuid)]: \(error.localizedDescription)")
+        } else {
+            log("쓰기 성공 [\(characteristic.uuid)]")
+        }
+    }
+
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
         if let error = error {
             log("값 수신 에러: \(error.localizedDescription)")
@@ -278,9 +296,28 @@ extension BLEManager: CBPeripheralDelegate {
         if connectionState == .handshaking {
             if let map = decoded as? [String: Int] {
                 commandMap.merge(map) { _, new in new }
-                log("맵 누적: \(commandMap.count)개")
+                log("맵 누적: \(commandMap.count)개 (step \(handshakeStep))")
+            } else {
+                log("핸드셰이크 응답 (맵 아님): \(String(describing: decoded))")
             }
-            if commandMap.count >= 10 {
+
+            handshakeResponseCount += 1
+
+            if handshakeStep <= 2 {
+                // 현재 step 응답 받음 → 다음 step 전송
+                handshakeStep += 1
+                // 약간의 딜레이 후 다음 전송
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                    guard let self, self.connectionState == .handshaking else { return }
+                    if self.handshakeStep <= 2 {
+                        self.sendNextHandshakeStep()
+                    } else if !self.commandMap.isEmpty {
+                        self.completeSetup()
+                    } else {
+                        self.log("핸드셰이크 완료했으나 commandMap 비어있음")
+                    }
+                }
+            } else if !commandMap.isEmpty {
                 completeSetup()
             }
         } else if connectionState == .connected {
