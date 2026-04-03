@@ -328,7 +328,8 @@ extension BLEManager: CBPeripheralDelegate {
                     if self.handshakeStep <= 2 {
                         self.sendNextHandshakeStep()
                     } else {
-                        self.log("핸드셰이크 3단계 완료 — commandMap: \(self.commandMap.count)개")
+                        self.log("commandMap 전체: \(self.commandMap)")
+                        self.log("핸드셰이크 3단계 완료 — \(self.commandMap.count)개")
                         self.completeSetup()
                     }
                 }
