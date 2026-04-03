@@ -15,6 +15,7 @@ final class BLEManager: NSObject, ObservableObject {
     @Published var discoveredPeripherals: [CBPeripheral] = []
     @Published var commandMap: [String: Int] = [:]
     @Published var lastButtonEvent: ButtonEvent?
+    @Published var debugLog: [String] = []
 
     private var centralManager: CBCentralManager!
     private var peripheral: CBPeripheral?
@@ -27,34 +28,41 @@ final class BLEManager: NSObject, ObservableObject {
     override init() {
         super.init()
         centralManager = CBCentralManager(delegate: self, queue: .main)
+        log("BLEManager 초기화")
+    }
+
+    func log(_ msg: String) {
+        let time = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
+        debugLog.append("[\(time)] \(msg)")
+        // Keep last 50 entries
+        if debugLog.count > 50 { debugLog.removeFirst() }
     }
 
     // MARK: - Public API
 
     func startScan() {
+        log("startScan() — BLE state: \(centralManager.state.rawValue)")
         guard centralManager.state == .poweredOn else {
-            // BLE not ready yet — queue scan for when it becomes ready
             pendingScan = true
             if centralManager.state == .poweredOff {
                 connectionState = .bluetoothOff
             }
+            log("BLE not ready, queued scan")
             return
         }
         pendingScan = false
         discoveredPeripherals = []
         connectionState = .scanning
 
-        // Scan with nil services to find all BLE devices first,
-        // then filter by name/advertisement data.
-        // Some Kronaby models may not advertise F431 in the ad packet.
         centralManager.scanForPeripherals(
             withServices: nil,
             options: [CBCentralManagerScanOptionAllowDuplicatesKey: false]
         )
+        log("스캔 시작됨 (all devices)")
 
-        // Auto-stop after 30 seconds
         DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in
             guard let self, self.connectionState == .scanning else { return }
+            self.log("스캔 30초 타임아웃")
             self.stopScan()
         }
     }
@@ -64,6 +72,7 @@ final class BLEManager: NSObject, ObservableObject {
         if connectionState == .scanning {
             connectionState = .disconnected
         }
+        log("스캔 중지")
     }
 
     func connect(to peripheral: CBPeripheral) {
@@ -71,11 +80,12 @@ final class BLEManager: NSObject, ObservableObject {
         self.peripheral = peripheral
         peripheral.delegate = self
         connectionState = .connecting
+        log("연결 시도: \(peripheral.name ?? "unknown") (\(peripheral.identifier))")
         centralManager.connect(peripheral, options: nil)
 
-        // Timeout: if still connecting after 15 seconds, cancel
         DispatchQueue.main.asyncAfter(deadline: .now() + 15) { [weak self] in
             guard let self, self.connectionState == .connecting else { return }
+            self.log("연결 15초 타임아웃 — 취소")
             self.disconnect()
         }
     }
@@ -83,46 +93,56 @@ final class BLEManager: NSObject, ObservableObject {
     func disconnect() {
         if let peripheral = peripheral {
             centralManager.cancelPeripheralConnection(peripheral)
+            log("연결 해제 요청")
         }
     }
 
     func sendCommand(name: String, value: Any) {
         guard let char = commandChar,
-              let cmdId = commandMap[name] else { return }
+              let cmdId = commandMap[name] else {
+            log("sendCommand 실패: \(name) (char=\(commandChar != nil), cmdId=\(commandMap[name] ?? -1))")
+            return
+        }
         let data = protocol_.encode(commandId: cmdId, value: value)
         peripheral?.writeValue(data, for: char, type: .withResponse)
+        log("CMD: \(name)(\(cmdId)) → \(data.map { String(format: "%02X", $0) }.joined())")
     }
 
     // MARK: - Connection Sequence
 
     private func performHandshake() {
         connectionState = .handshaking
-        guard let char = commandChar else { return }
+        guard let char = commandChar else {
+            log("핸드셰이크 실패: commandChar 없음")
+            return
+        }
+        log("핸드셰이크 시작")
 
         for i in 0...2 {
             let data = protocol_.encode(commandId: 0, value: i)
             peripheral?.writeValue(data, for: char, type: .withResponse)
+            log("map_cmd(\(i)) → \(data.map { String(format: "%02X", $0) }.joined())")
         }
     }
 
     private func completeSetup() {
+        log("핸드셰이크 완료 — commandMap: \(commandMap)")
         sendCommand(name: "onboarding_done", value: 1)
 
         let now = Date()
         let cal = Calendar.current
         let comps = cal.dateComponents([.year, .month, .day, .hour, .minute, .second, .weekday], from: now)
 
-        // Kronaby day mapping: Tue=0, Wed=1, Thu=2, Fri=3, Sat=4, Sun=5, Mon=6
-        let weekday = comps.weekday! // Sunday=1, Monday=2, ...
+        let weekday = comps.weekday!
         let kronabyDay: Int
         switch weekday {
-        case 1: kronabyDay = 5  // Sunday
-        case 2: kronabyDay = 6  // Monday
-        case 3: kronabyDay = 0  // Tuesday
-        case 4: kronabyDay = 1  // Wednesday
-        case 5: kronabyDay = 2  // Thursday
-        case 6: kronabyDay = 3  // Friday
-        case 7: kronabyDay = 4  // Saturday
+        case 1: kronabyDay = 5
+        case 2: kronabyDay = 6
+        case 3: kronabyDay = 0
+        case 4: kronabyDay = 1
+        case 5: kronabyDay = 2
+        case 6: kronabyDay = 3
+        case 7: kronabyDay = 4
         default: kronabyDay = 0
         }
 
@@ -133,19 +153,18 @@ final class BLEManager: NSObject, ObservableObject {
         ])
 
         connectionState = .connected
+        log("설정 완료 — 연결됨!")
     }
 
     // MARK: - Filtering
 
     private func isKronabyDevice(_ peripheral: CBPeripheral, advertisementData: [String: Any]) -> Bool {
-        // Check by advertised service UUIDs
         if let serviceUUIDs = advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID] {
             let uuidStrings = serviceUUIDs.map { $0.uuidString.uppercased() }
             if uuidStrings.contains("F431") || uuidStrings.contains("0000F431-0000-1000-8000-00805F9B34FB") {
                 return true
             }
         }
-        // Fallback: check device name
         if let name = peripheral.name?.lowercased() {
             if name.contains("kronaby") || name.contains("anima") {
                 return true
@@ -159,11 +178,10 @@ final class BLEManager: NSObject, ObservableObject {
 
 extension BLEManager: CBCentralManagerDelegate {
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
+        log("BLE state → \(central.state.rawValue)")
         switch central.state {
         case .poweredOn:
-            if pendingScan {
-                startScan()
-            }
+            if pendingScan { startScan() }
         case .poweredOff:
             connectionState = .bluetoothOff
         default:
@@ -174,19 +192,24 @@ extension BLEManager: CBCentralManagerDelegate {
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral,
                         advertisementData: [String: Any], rssi RSSI: NSNumber) {
         guard isKronabyDevice(peripheral, advertisementData: advertisementData) else { return }
+        log("발견: \(peripheral.name ?? "?") RSSI:\(RSSI)")
         if !discoveredPeripherals.contains(where: { $0.identifier == peripheral.identifier }) {
             discoveredPeripherals = discoveredPeripherals + [peripheral]
         }
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
-        peripheral.discoverServices([
-            BLEConstants.animaServiceUUID,
-            BLEConstants.deviceInfoServiceUUID
-        ])
+        log("BLE 연결됨 — 서비스 검색 시작")
+        peripheral.discoverServices(nil)
+    }
+
+    func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
+        log("연결 실패: \(error?.localizedDescription ?? "unknown")")
+        connectionState = .disconnected
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
+        log("연결 끊김: \(error?.localizedDescription ?? "정상")")
         connectionState = .disconnected
         self.peripheral = nil
         commandChar = nil
@@ -199,22 +222,38 @@ extension BLEManager: CBCentralManagerDelegate {
 
 extension BLEManager: CBPeripheralDelegate {
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
-        guard let services = peripheral.services else { return }
+        if let error = error {
+            log("서비스 검색 에러: \(error.localizedDescription)")
+            return
+        }
+        guard let services = peripheral.services else {
+            log("서비스 없음")
+            return
+        }
+        log("서비스 발견: \(services.map { $0.uuid.uuidString })")
         for service in services {
             peripheral.discoverCharacteristics(nil, for: service)
         }
     }
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
+        if let error = error {
+            log("특성 검색 에러 (\(service.uuid)): \(error.localizedDescription)")
+            return
+        }
         guard let chars = service.characteristics else { return }
+        log("특성 [\(service.uuid)]: \(chars.map { $0.uuid.uuidString })")
+
         for char in chars {
             switch char.uuid {
             case BLEConstants.commandCharUUID:
                 commandChar = char
                 peripheral.setNotifyValue(true, for: char)
+                log("→ commandChar 획득")
             case BLEConstants.notifyCharUUID:
                 notifyChar = char
                 peripheral.setNotifyValue(true, for: char)
+                log("→ notifyChar 획득")
             default:
                 break
             }
@@ -226,12 +265,20 @@ extension BLEManager: CBPeripheralDelegate {
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
+        if let error = error {
+            log("값 수신 에러: \(error.localizedDescription)")
+            return
+        }
         guard let data = characteristic.value else { return }
+        let hex = data.map { String(format: "%02X", $0) }.joined()
+        log("수신 [\(characteristic.uuid)]: \(hex)")
+
         let decoded = protocol_.decode(data: data)
 
         if connectionState == .handshaking {
             if let map = decoded as? [String: Int] {
                 commandMap.merge(map) { _, new in new }
+                log("맵 누적: \(commandMap.count)개")
             }
             if commandMap.count >= 10 {
                 completeSetup()
@@ -239,6 +286,7 @@ extension BLEManager: CBPeripheralDelegate {
         } else if connectionState == .connected {
             if let event = protocol_.parseButtonEvent(decoded, commandMap: commandMap) {
                 lastButtonEvent = event
+                log("버튼: \(event.buttonName) \(event.eventName)")
             }
         }
     }

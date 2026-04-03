@@ -3,10 +3,11 @@ import SwiftUI
 struct ConnectionView: View {
     @EnvironmentObject var ble: BLEManager
     @State private var showHelp = false
+    @State private var showLog = true
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 20) {
+            VStack(spacing: 12) {
                 // Connection status
                 HStack {
                     Circle()
@@ -15,23 +16,15 @@ struct ConnectionView: View {
                     Text(ble.connectionState.rawValue)
                         .font(.headline)
                 }
-                .padding()
 
                 // Last button event
                 if let event = ble.lastButtonEvent {
-                    VStack {
-                        Text("마지막 버튼 이벤트")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Text("\(event.buttonName) — \(event.eventName)")
-                            .font(.title3)
-                            .bold()
-                    }
-                    .padding()
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                    Text("\(event.buttonName) — \(event.eventName)")
+                        .font(.title3)
+                        .bold()
+                        .padding(8)
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
                 }
-
-                Spacer()
 
                 // Scan results
                 if !ble.discoveredPeripherals.isEmpty {
@@ -49,6 +42,32 @@ struct ConnectionView: View {
                         }
                     }
                     .listStyle(.plain)
+                    .frame(maxHeight: 150)
+                }
+
+                // Debug log
+                if showLog {
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            LazyVStack(alignment: .leading, spacing: 2) {
+                                ForEach(Array(ble.debugLog.enumerated()), id: \.offset) { i, line in
+                                    Text(line)
+                                        .font(.system(size: 11, design: .monospaced))
+                                        .foregroundStyle(.secondary)
+                                        .id(i)
+                                }
+                            }
+                            .padding(.horizontal, 8)
+                        }
+                        .frame(maxHeight: 250)
+                        .background(Color(.systemGray6))
+                        .cornerRadius(8)
+                        .onChange(of: ble.debugLog.count) {
+                            if let last = ble.debugLog.indices.last {
+                                proxy.scrollTo(last, anchor: .bottom)
+                            }
+                        }
+                    }
                 }
 
                 Spacer()
@@ -80,6 +99,11 @@ struct ConnectionView: View {
             .padding()
             .navigationTitle("Kronaby")
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { showLog.toggle() } label: {
+                        Image(systemName: showLog ? "terminal.fill" : "terminal")
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showHelp = true } label: {
                         Image(systemName: "questionmark.circle")
