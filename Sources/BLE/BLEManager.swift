@@ -134,12 +134,13 @@ final class BLEManager: NSObject, ObservableObject {
     func sendCommand(name: String, value: Any) {
         guard let char = commandChar,
               let cmdId = commandMap[name] else {
-            log("sendCommand 실패: \(name) (char=\(commandChar != nil), cmdId=\(commandMap[name] ?? -1))")
+            log("sendCommand 실패: \(name) (char=\(commandChar != nil), map=\(commandMap[name] as Any))")
             return
         }
         let data = protocol_.encode(commandId: cmdId, value: value)
-        peripheral?.writeValue(data, for: char, type: .withResponse)
-        log("CMD: \(name)(\(cmdId)) → \(data.map { String(format: "%02X", $0) }.joined())")
+        let hex = data.map { String(format: "%02X", $0) }.joined()
+        log("CMD: \(name)(\(cmdId)) → \(hex)")
+        peripheral?.writeValue(data, for: char, type: .withoutResponse)
     }
 
     // MARK: - Connection Sequence
@@ -202,20 +203,7 @@ final class BLEManager: NSObject, ObservableObject {
 
     // MARK: - Filtering
 
-    private func isKronabyDevice(_ peripheral: CBPeripheral, advertisementData: [String: Any]) -> Bool {
-        if let serviceUUIDs = advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID] {
-            let uuidStrings = serviceUUIDs.map { $0.uuidString.uppercased() }
-            if uuidStrings.contains("F431") || uuidStrings.contains("0000F431-0000-1000-8000-00805F9B34FB") {
-                return true
-            }
-        }
-        if let name = peripheral.name?.lowercased() {
-            if name.contains("kronaby") || name.contains("anima") {
-                return true
-            }
-        }
-        return false
-    }
+    // isKronabyDevice 불필요 — F431 서비스 필터로 스캔하므로 didDiscover에 오는 건 모두 Kronaby
 }
 
 // MARK: - CBCentralManagerDelegate
@@ -225,27 +213,19 @@ extension BLEManager: CBCentralManagerDelegate {
         log("BLE state → \(central.state.rawValue)")
         switch central.state {
         case .poweredOn:
-            // 저장된 페리퍼럴 UUID로 복원 시도
+            // 저장된 페리퍼럴이 이미 연결 상태인 경우만 복원
             if let savedID = loadSavedPeripheralID() {
                 let peripherals = central.retrievePeripherals(withIdentifiers: [savedID])
-                if let existing = peripherals.first {
-                    if existing.state == .connected {
-                        // 이미 연결됨 — 서비스 재검색
-                        log("기존 연결 복원: \(existing.name ?? "?")")
-                        self.peripheral = existing
-                        existing.delegate = self
-                        connectionState = .connecting
-                        existing.discoverServices(nil)
-                    } else {
-                        // 알려진 기기지만 연결 안 됨 — 재연결
-                        log("저장된 기기 재연결: \(existing.name ?? "?")")
-                        self.peripheral = existing
-                        existing.delegate = self
-                        connectionState = .connecting
-                        central.connect(existing, options: nil)
-                    }
+                if let existing = peripherals.first, existing.state == .connected {
+                    log("기존 연결 복원: \(existing.name ?? "?")")
+                    self.peripheral = existing
+                    existing.delegate = self
+                    connectionState = .connecting
+                    existing.discoverServices(nil)
                     return
                 }
+                // 연결 안 되어 있으면 수동 스캔 대기 (자동 재연결 안 함)
+                log("저장된 기기 미연결 — 스캔 필요")
             }
             if pendingScan { startScan() }
         case .poweredOff:
