@@ -47,27 +47,19 @@ struct ConnectionView: View {
 
                 // Debug log
                 if showLog {
-                    ScrollViewReader { proxy in
-                        ScrollView {
-                            LazyVStack(alignment: .leading, spacing: 2) {
-                                ForEach(Array(ble.debugLog.enumerated()), id: \.offset) { i, line in
-                                    Text(line)
-                                        .font(.system(size: 11, design: .monospaced))
-                                        .foregroundStyle(.secondary)
-                                        .id(i)
-                                }
-                            }
-                            .padding(.horizontal, 8)
-                        }
-                        .frame(maxHeight: 250)
-                        .background(Color(.systemGray6))
-                        .cornerRadius(8)
-                        .onChange(of: ble.debugLog.count) {
-                            if let last = ble.debugLog.indices.last {
-                                proxy.scrollTo(last, anchor: .bottom)
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 2) {
+                            ForEach(Array(ble.debugLog.enumerated()), id: \.offset) { _, line in
+                                Text(line)
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundStyle(.secondary)
                             }
                         }
+                        .padding(.horizontal, 8)
                     }
+                    .frame(maxHeight: 250)
+                    .background(Color(.systemGray6))
+                    .cornerRadius(8)
                 }
 
                 Spacer()
