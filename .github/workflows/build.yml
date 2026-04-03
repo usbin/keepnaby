@@ -22,21 +22,28 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
-      - name: Build (no signing)
+      - name: Build for device (unsigned)
         run: |
           xcodebuild build \
             -project Kronaby.xcodeproj \
             -scheme Kronaby \
-            -destination 'generic/platform=iOS Simulator' \
-            -configuration Debug \
-            CODE_SIGN_IDENTITY="" \
+            -destination 'generic/platform=iOS' \
+            -configuration Release \
+            -derivedDataPath build \
+            CODE_SIGN_IDENTITY="-" \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO
+            CODE_SIGNING_ALLOWED=YES \
+            AD_HOC_CODE_SIGNING_ALLOWED=YES
 
-      - name: Upload build artifact
-        if: success()
+      - name: Package .ipa
+        run: |
+          mkdir -p Payload
+          cp -r build/Build/Products/Release-iphoneos/Kronaby.app Payload/
+          zip -r Kronaby.ipa Payload
+
+      - name: Upload .ipa artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Kronaby-Debug
-          path: build/
-          retention-days: 7
+          name: Kronaby-ipa
+          path: Kronaby.ipa
+          retention-days: 30
