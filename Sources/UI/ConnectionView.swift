@@ -2,10 +2,13 @@ import SwiftUI
 
 struct ConnectionView: View {
     @EnvironmentObject var ble: BLEManager
+    @EnvironmentObject var actionManager: ButtonActionManager
     @State private var showHelp = false
     @State private var showLog = true
     @State private var showCalibration = false
     @State private var showTimeSetting = false
+    @State private var showButtonMapping = false
+    @State private var showComplications = false
 
     var body: some View {
         NavigationStack {
@@ -30,18 +33,28 @@ struct ConnectionView: View {
 
                 // Connected: show tools
                 if ble.connectionState == .connected {
-                    HStack(spacing: 12) {
-                        Button {
-                            showCalibration = true
-                        } label: {
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                        Button { showCalibration = true } label: {
                             Label("영점 조정", systemImage: "dial.low")
+                                .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.bordered)
 
-                        Button {
-                            showTimeSetting = true
-                        } label: {
+                        Button { showTimeSetting = true } label: {
                             Label("시각 설정", systemImage: "clock")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+
+                        Button { showButtonMapping = true } label: {
+                            Label("버튼 매핑", systemImage: "hand.tap")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+
+                        Button { showComplications = true } label: {
+                            Label("크라운", systemImage: "crown")
+                                .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.bordered)
                     }
@@ -148,6 +161,14 @@ struct ConnectionView: View {
             }
             .sheet(isPresented: $showTimeSetting) {
                 TimeSettingView(isPresented: $showTimeSetting)
+                    .environmentObject(ble)
+            }
+            .sheet(isPresented: $showButtonMapping) {
+                ButtonMappingView()
+                    .environmentObject(actionManager)
+            }
+            .sheet(isPresented: $showComplications) {
+                ComplicationsView()
                     .environmentObject(ble)
             }
         }
