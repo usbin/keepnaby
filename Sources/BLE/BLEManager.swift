@@ -108,12 +108,6 @@ final class BLEManager: NSObject, ObservableObject {
         connectionState = .connecting
         log("연결 시도: \(peripheral.name ?? "unknown") (\(peripheral.identifier))")
         centralManager.connect(peripheral, options: nil)
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 15) { [weak self] in
-            guard let self, self.connectionState == .connecting else { return }
-            self.log("연결 15초 타임아웃 — 취소")
-            self.disconnect()
-        }
     }
 
     func disconnect() {
@@ -156,8 +150,6 @@ final class BLEManager: NSObject, ObservableObject {
         sendNextHandshakeStep()
     }
 
-    private var waitingForRead = false
-
     private func sendNextHandshakeStep() {
         guard handshakeStep <= 2 else {
             log("핸드셰이크 3단계 전송 완료")
@@ -168,18 +160,27 @@ final class BLEManager: NSObject, ObservableObject {
             return
         }
         let step = handshakeStep
-        // 올바른 인코딩: [0, step] (Array), withoutResponse
         let data = protocol_.encodeArray([0, step])
-        waitingForRead = false
         peripheral?.writeValue(data, for: char, type: .withoutResponse)
         log("map_cmd(\(step)) → \(data.map { String(format: "%02X", $0) }.joined())")
 
-        // write 후 시계가 응답 준비할 시간 확보 후 read
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-            guard let self, let p = self.peripheral, let c = self.commandChar else { return }
-            self.waitingForRead = true
+        // write 후 read 시도, 그리고 notification도 대기
+        // read와 notification 중 먼저 유효한 응답이 오면 진행
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self, let p = self.peripheral, let c = self.commandChar,
+                  self.connectionState == .handshaking else { return }
             p.readValue(for: c)
             self.log("map_cmd(\(step)) read 요청")
+        }
+
+        // 안전장치: 5초 후에도 이 step에서 안 넘어갔으면 read 재시도
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { [weak self] in
+            guard let self, self.connectionState == .handshaking,
+                  self.handshakeStep == step else { return }
+            self.log("map_cmd(\(step)) 5초 타임아웃 — read 재시도")
+            if let p = self.peripheral, let c = self.commandChar {
+                p.readValue(for: c)
+            }
         }
     }
 
@@ -379,13 +380,19 @@ extension BLEManager: CBPeripheralDelegate {
 
             // command 특성에서 read 응답이 온 경우 → 다음 step 진행
             if isFromCommandChar {
-                // 이전과 같은 데이터면 아직 갱신 안 됨 — 재시도
-                if hex == lastReadHex && handshakeStep > 0 && readRetryCount < 3 {
+                // 이전과 같은 데이터면 아직 갱신 안 됨 — write 재전송 + read 재시도 (무한)
+                if hex == lastReadHex && handshakeStep > 0 {
                     readRetryCount += 1
                     log("같은 데이터 — \(readRetryCount)회 재시도")
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-                        guard let self, let p = self.peripheral, let c = self.commandChar else { return }
-                        p.readValue(for: c)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                        guard let self, self.connectionState == .handshaking,
+                              let char = self.commandChar, let p = self.peripheral else { return }
+                        let data = self.protocol_.encodeArray([0, self.handshakeStep])
+                        p.writeValue(data, for: char, type: .withoutResponse)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                            guard let self, let p = self.peripheral, let c = self.commandChar else { return }
+                            p.readValue(for: c)
+                        }
                     }
                     return
                 }
