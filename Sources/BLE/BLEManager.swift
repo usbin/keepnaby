@@ -148,34 +148,11 @@ final class BLEManager: NSObject, ObservableObject {
     }
 
     private func completeSetup() {
-        log("핸드셰이크 완료 — commandMap: \(commandMap)")
+        log("핸드셰이크 완료 — commandMap \(commandMap.count)개")
         sendCommand(name: "onboarding_done", value: 1)
-
-        let now = Date()
-        let cal = Calendar.current
-        let comps = cal.dateComponents([.year, .month, .day, .hour, .minute, .second, .weekday], from: now)
-
-        let weekday = comps.weekday!
-        let kronabyDay: Int
-        switch weekday {
-        case 1: kronabyDay = 5
-        case 2: kronabyDay = 6
-        case 3: kronabyDay = 0
-        case 4: kronabyDay = 1
-        case 5: kronabyDay = 2
-        case 6: kronabyDay = 3
-        case 7: kronabyDay = 4
-        default: kronabyDay = 0
-        }
-
-        sendCommand(name: "datetime", value: [
-            comps.year!, comps.month!, comps.day!,
-            comps.hour!, comps.minute!, comps.second!,
-            kronabyDay
-        ])
-
+        // datetime은 유저가 캘리브레이션 후 시각 설정에서 전송
         connectionState = .connected
-        log("설정 완료 — 연결됨!")
+        log("연결됨! 영점 조정 → 시각 설정 순서로 진행하세요.")
     }
 
     // MARK: - Filtering
@@ -203,7 +180,17 @@ extension BLEManager: CBCentralManagerDelegate {
         log("BLE state → \(central.state.rawValue)")
         switch central.state {
         case .poweredOn:
-            if pendingScan { startScan() }
+            // 이미 연결된 Kronaby가 있으면 복원
+            let connected = central.retrieveConnectedPeripherals(withServices: [BLEConstants.animaServiceUUID])
+            if let existing = connected.first {
+                log("기존 연결 복원: \(existing.name ?? "?")")
+                self.peripheral = existing
+                existing.delegate = self
+                connectionState = .connecting
+                central.connect(existing, options: nil)
+            } else if pendingScan {
+                startScan()
+            }
         case .poweredOff:
             connectionState = .bluetoothOff
         default:

@@ -4,6 +4,8 @@ struct ConnectionView: View {
     @EnvironmentObject var ble: BLEManager
     @State private var showHelp = false
     @State private var showLog = true
+    @State private var showCalibration = false
+    @State private var showTimeSetting = false
 
     var body: some View {
         NavigationStack {
@@ -26,8 +28,27 @@ struct ConnectionView: View {
                         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
                 }
 
+                // Connected: show tools
+                if ble.connectionState == .connected {
+                    HStack(spacing: 12) {
+                        Button {
+                            showCalibration = true
+                        } label: {
+                            Label("영점 조정", systemImage: "dial.low")
+                        }
+                        .buttonStyle(.bordered)
+
+                        Button {
+                            showTimeSetting = true
+                        } label: {
+                            Label("시각 설정", systemImage: "clock")
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+
                 // Scan results
-                if !ble.discoveredPeripherals.isEmpty {
+                if !ble.discoveredPeripherals.isEmpty && ble.connectionState != .connected {
                     List(ble.discoveredPeripherals, id: \.identifier) { peripheral in
                         Button {
                             ble.connect(to: peripheral)
@@ -70,7 +91,7 @@ struct ConnectionView: View {
                             }
                             .padding(.horizontal, 8)
                         }
-                        .frame(maxHeight: 230)
+                        .frame(maxHeight: 200)
                         .background(Color(.systemGray6))
                         .cornerRadius(8)
                     }
@@ -116,6 +137,14 @@ struct ConnectionView: View {
                 Button("확인", role: .cancel) {}
             } message: {
                 Text("시계가 검색되지 않으면 기존 페어링을 먼저 삭제해야 합니다.\n\n상단 + 하단 푸셔를 동시에 길게 누르면 시계가 3회 진동하며 페어링이 초기화됩니다.\n\n초기화 후 다시 스캔하세요.")
+            }
+            .sheet(isPresented: $showCalibration) {
+                CalibrationView(isPresented: $showCalibration)
+                    .environmentObject(ble)
+            }
+            .sheet(isPresented: $showTimeSetting) {
+                TimeSettingView(isPresented: $showTimeSetting)
+                    .environmentObject(ble)
             }
         }
     }
