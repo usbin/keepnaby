@@ -189,9 +189,13 @@ final class BLEManager: NSObject, ObservableObject {
         }
 
         saveCommandMap()
-        sendCommand(name: "onboarding_done", value: 1)
         connectionState = .connected
-        log("연결됨! 영점 조정 → 시각 설정 순서로 진행하세요.")
+        // 핸드셰이크 write/read 완료 후 충분히 대기 → onboarding_done 전송
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            guard let self else { return }
+            self.sendCommand(name: "onboarding_done", value: 1)
+            self.log("연결됨! 영점 조정 → 시각 설정 순서로 진행하세요.")
+        }
     }
 
     // MARK: - Filtering
