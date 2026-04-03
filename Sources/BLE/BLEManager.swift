@@ -294,10 +294,26 @@ extension BLEManager: CBPeripheralDelegate {
         let decoded = protocol_.decode(data: data)
 
         if connectionState == .handshaking {
+            var foundMap = false
+
+            // Case 1: response is directly {string: int}
             if let map = decoded as? [String: Int] {
                 commandMap.merge(map) { _, new in new }
-                log("맵 누적: \(commandMap.count)개 (step \(handshakeStep))")
-            } else {
+                log("맵(직접): \(commandMap.count)개")
+                foundMap = true
+            }
+            // Case 2: response is {int: {string: int}} — wrapped with command ID
+            else if let outer = decoded as? [Int: Any] {
+                for (_, value) in outer {
+                    if let innerMap = value as? [String: Int] {
+                        commandMap.merge(innerMap) { _, new in new }
+                        log("맵(래핑): \(commandMap.count)개")
+                        foundMap = true
+                    }
+                }
+            }
+
+            if !foundMap {
                 log("핸드셰이크 응답 (맵 아님): \(String(describing: decoded))")
             }
 
@@ -311,14 +327,16 @@ extension BLEManager: CBPeripheralDelegate {
                     guard let self, self.connectionState == .handshaking else { return }
                     if self.handshakeStep <= 2 {
                         self.sendNextHandshakeStep()
-                    } else if !self.commandMap.isEmpty {
-                        self.completeSetup()
                     } else {
-                        self.log("핸드셰이크 완료했으나 commandMap 비어있음")
+                        self.log("핸드셰이크 3단계 완료 — commandMap: \(self.commandMap.count)개")
+                        self.completeSetup()
                     }
                 }
-            } else if !commandMap.isEmpty {
-                completeSetup()
+            } else {
+                log("추가 응답 수신, commandMap: \(commandMap.count)개")
+                if handshakeStep > 2 {
+                    completeSetup()
+                }
             }
         } else if connectionState == .connected {
             if let event = protocol_.parseButtonEvent(decoded, commandMap: commandMap) {
