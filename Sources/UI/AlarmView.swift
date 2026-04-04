@@ -99,31 +99,52 @@ struct AlarmRow: View {
             }
 
             // 요일 선택
-            HStack(spacing: 6) {
-                ForEach(1...7, id: \.self) { day in
-                    let isSelected = alarm.days.contains(day)
-                    Button {
-                        if isSelected {
-                            alarm.days.remove(day)
-                        } else {
-                            alarm.days.insert(day)
-                        }
-                    } label: {
-                        Text(dayLabels[day - 1])
-                            .font(.caption2)
-                            .bold(isSelected)
-                            .frame(width: 28, height: 28)
-                            .background(isSelected ? Color.blue : Color(.systemGray5))
-                            .foregroundStyle(isSelected ? .white : .primary)
-                            .cornerRadius(14)
-                    }
-                }
-                Spacer()
-                Text(alarm.daysString)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
+            DayPicker(days: $alarm.days)
+
+            Text(alarm.daysString)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
         }
         .padding(.vertical, 4)
+    }
+}
+
+struct DayPicker: View {
+    @Binding var days: Set<Int>
+    private let labels = ["월", "화", "수", "목", "금", "토", "일"]
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(1...7, id: \.self) { day in
+                DayButton(day: day, label: labels[day - 1], days: $days)
+            }
+        }
+    }
+}
+
+struct DayButton: View {
+    let day: Int
+    let label: String
+    @Binding var days: Set<Int>
+
+    private var isSelected: Bool { days.contains(day) }
+
+    var body: some View {
+        Button {
+            if isSelected {
+                days.remove(day)
+            } else {
+                days.insert(day)
+            }
+        } label: {
+            Text(label)
+                .font(.caption2)
+                .bold(isSelected)
+                .frame(width: 28, height: 28)
+                .background(isSelected ? Color.blue : Color(.systemGray5))
+                .foregroundStyle(isSelected ? .white : .primary)
+                .cornerRadius(14)
+        }
+        .buttonStyle(.plain)
     }
 }
