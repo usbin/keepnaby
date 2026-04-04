@@ -9,55 +9,55 @@ struct NotificationMappingView: View {
         NavigationStack {
             Form {
                 Section {
-                    Text("알림 카테고리별 진동 패턴을 설정합니다.\n시계가 iPhone ANCS 알림을 직접 감지하여 진동합니다.")
+                    Text("알림 카테고리별 진동 패턴과 바늘 위치를 설정합니다.\n시계가 iPhone ANCS 알림을 직접 감지합니다.\n앱이 꺼져 있어도 동작합니다.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
 
                 Section("알림 필터") {
                     ForEach($mappingManager.filters) { $filter in
-                        HStack {
-                            Image(systemName: filter.category.systemImage)
-                                .foregroundStyle(filter.enabled ? .blue : .gray)
-                                .frame(width: 24)
+                        VStack(spacing: 8) {
+                            HStack {
+                                Image(systemName: filter.systemImage)
+                                    .foregroundStyle(filter.enabled ? .blue : .gray)
+                                    .frame(width: 24)
 
-                            Text(filter.category.displayName)
+                                Text(filter.displayName)
+                                    .bold(filter.isAllNotifications)
 
-                            Spacer()
+                                Spacer()
+
+                                Toggle("", isOn: $filter.enabled)
+                                    .labelsHidden()
+                            }
 
                             if filter.enabled {
-                                Picker("", selection: $filter.vibration) {
-                                    ForEach(VibrationPattern.allCases) { pattern in
-                                        Text(pattern.displayName).tag(pattern)
+                                HStack(spacing: 16) {
+                                    // 바늘 위치
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "clock")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                        Picker("위치", selection: $filter.position) {
+                                            ForEach(1...12, id: \.self) { num in
+                                                Text("\(num)시").tag(num)
+                                            }
+                                        }
+                                        .pickerStyle(.menu)
                                     }
+
+                                    // 진동 패턴
+                                    Picker("진동", selection: $filter.vibration) {
+                                        ForEach(VibrationPattern.allCases) { pattern in
+                                            Text(pattern.displayName).tag(pattern)
+                                        }
+                                    }
+                                    .pickerStyle(.menu)
                                 }
-                                .pickerStyle(.menu)
-                                .frame(width: 100)
-                            }
-
-                            Toggle("", isOn: $filter.enabled)
-                                .labelsHidden()
-                        }
-                    }
-                }
-
-                Section("현재 설정") {
-                    let active = mappingManager.filters.filter { $0.enabled }
-                    if active.isEmpty {
-                        Text("활성화된 필터 없음")
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ForEach(active) { filter in
-                            HStack {
-                                Image(systemName: filter.category.systemImage)
-                                    .foregroundStyle(.blue)
-                                    .frame(width: 24)
-                                Text(filter.category.displayName)
-                                Spacer()
-                                Text(filter.vibration.displayName)
-                                    .foregroundStyle(.secondary)
+                                .font(.caption)
                             }
                         }
+                        .padding(.vertical, 2)
                     }
                 }
 
@@ -75,6 +75,12 @@ struct NotificationMappingView: View {
                             .foregroundStyle(.green)
                             .frame(maxWidth: .infinity)
                     }
+                }
+
+                Section("참고") {
+                    Text("• \"모든 알림\": 카테고리 무관 모든 알림에 반응\n• 바늘 위치: 알림 시 시침/분침이 가리킬 숫자\n• 진동: 알림 시 진동 횟수\n• 설정은 시계에 저장되므로 앱 없이도 동작")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
             .navigationTitle("알림 매핑")

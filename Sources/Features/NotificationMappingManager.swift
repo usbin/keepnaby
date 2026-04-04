@@ -56,6 +56,9 @@ enum AncsCategory: Int, Codable, CaseIterable, Identifiable {
     var bitmask: Int {
         1 << (rawValue + 8)
     }
+
+    // 모든 카테고리 비트마스크
+    static var allBitmask: Int { 0xFFFFFF }
 }
 
 enum VibrationPattern: Int, Codable, CaseIterable, Identifiable {
@@ -77,10 +80,27 @@ enum VibrationPattern: Int, Codable, CaseIterable, Identifiable {
 // MARK: - 필터 설정
 
 struct NotificationFilter: Codable, Equatable, Identifiable {
-    var id: Int // 필터 인덱스 (0~34)
-    var category: AncsCategory
+    var id: Int             // 필터 인덱스 (0~34), 바늘 위치와 연관 가능
+    var category: AncsCategory?  // nil = 모든 알림
     var vibration: VibrationPattern
+    var position: Int       // 시계 숫자 위치 (1~12)
     var enabled: Bool
+    var isAllNotifications: Bool  // 모든 알림 필터 여부
+
+    var displayName: String {
+        if isAllNotifications { return "모든 알림" }
+        return category?.displayName ?? "알 수 없음"
+    }
+
+    var systemImage: String {
+        if isAllNotifications { return "bell.badge.fill" }
+        return category?.systemImage ?? "questionmark"
+    }
+
+    var bitmask: Int {
+        if isAllNotifications { return AncsCategory.allBitmask }
+        return category?.bitmask ?? 0
+    }
 }
 
 // MARK: - Manager
@@ -88,21 +108,21 @@ struct NotificationFilter: Codable, Equatable, Identifiable {
 final class NotificationMappingManager: ObservableObject {
     @Published var filters: [NotificationFilter] = []
 
-    private static let storageKey = "kronaby_ancs_filters"
+    private static let storageKey = "kronaby_ancs_filters_v2"
 
     init() {
         load()
         if filters.isEmpty {
-            // 기본 필터: 주요 카테고리별 하나씩
             filters = [
-                NotificationFilter(id: 0, category: .incomingCall, vibration: .double, enabled: false),
-                NotificationFilter(id: 1, category: .missedCall, vibration: .single, enabled: false),
-                NotificationFilter(id: 2, category: .social, vibration: .single, enabled: false),
-                NotificationFilter(id: 3, category: .email, vibration: .single, enabled: false),
-                NotificationFilter(id: 4, category: .schedule, vibration: .single, enabled: false),
-                NotificationFilter(id: 5, category: .news, vibration: .single, enabled: false),
-                NotificationFilter(id: 6, category: .entertainment, vibration: .single, enabled: false),
-                NotificationFilter(id: 7, category: .other, vibration: .single, enabled: false),
+                NotificationFilter(id: 0, category: nil, vibration: .single, position: 11, enabled: false, isAllNotifications: true),
+                NotificationFilter(id: 1, category: .incomingCall, vibration: .double, position: 12, enabled: false, isAllNotifications: false),
+                NotificationFilter(id: 2, category: .missedCall, vibration: .single, position: 1, enabled: false, isAllNotifications: false),
+                NotificationFilter(id: 3, category: .social, vibration: .single, position: 2, enabled: false, isAllNotifications: false),
+                NotificationFilter(id: 4, category: .email, vibration: .single, position: 3, enabled: false, isAllNotifications: false),
+                NotificationFilter(id: 5, category: .schedule, vibration: .single, position: 4, enabled: false, isAllNotifications: false),
+                NotificationFilter(id: 6, category: .news, vibration: .single, position: 5, enabled: false, isAllNotifications: false),
+                NotificationFilter(id: 7, category: .entertainment, vibration: .single, position: 6, enabled: false, isAllNotifications: false),
+                NotificationFilter(id: 8, category: .other, vibration: .single, position: 7, enabled: false, isAllNotifications: false),
             ]
         }
     }
@@ -113,18 +133,20 @@ final class NotificationMappingManager: ObservableObject {
         for filter in filters {
             if filter.enabled {
                 // 활성 필터: [index, categoryBitmask, attribute(255=all), "", vibrationPattern]
+                // index가 바늘 위치를 결정할 수 있음 (테스트 필요)
+                let filterIndex = filter.position  // 위치값을 인덱스로 사용
                 ble.sendCommand(name: "ancs_filter", value: [
-                    filter.id,
-                    filter.category.bitmask,
-                    255, // Attribute.All
+                    filterIndex,
+                    filter.bitmask,
+                    255,
                     "",
                     filter.vibration.rawValue
                 ] as [Any])
-                ble.log("ancs_filter[\(filter.id)]: \(filter.category.displayName) → \(filter.vibration.displayName)")
+                ble.log("ancs_filter[\(filterIndex)]: \(filter.displayName) → 위치 \(filter.position), \(filter.vibration.displayName)")
             } else {
                 // 비활성 필터: [index] (삭제)
-                ble.sendCommand(name: "ancs_filter", value: [filter.id])
-                ble.log("ancs_filter[\(filter.id)]: 삭제")
+                ble.sendCommand(name: "ancs_filter", value: [filter.position])
+                ble.log("ancs_filter[\(filter.position)]: 삭제")
             }
         }
     }
