@@ -185,7 +185,7 @@ struct ConnectionView: View {
                 }
             }
             .padding()
-            .navigationTitle("Kronaby")
+            .navigationTitle("Keepnaby")
             .navigationBarItems(
                 leading: Button(action: { showLog.toggle() }) {
                     Image(systemName: showLog ? "terminal.fill" : "terminal")
@@ -210,7 +210,7 @@ struct ConnectionView: View {
             .alert("시계 페어링 초기화", isPresented: $showHelp) {
                 Button("확인", role: .cancel) {}
             } message: {
-                Text("시계가 검색되지 않으면 기존 페어링을 먼저 삭제해야 합니다.\n\n1. iPhone 설정 → 블루투스 → Kronaby 옆 (i) → 이 기기 지우기\n2. 시계 상단 + 하단 푸셔를 동시에 길게 누름 → 3회 진동 후 바늘이 회전하면 페어링 모드\n3. 앱에서 스캔 시작")
+                Text("시계가 검색되지 않으면 기존 페어링을 먼저 삭제해야 합니다.\n\n1. iPhone 설정 → 블루투스 → Kronaby(시계 이름) 옆 (i) → 이 기기 지우기\n2. 시계 상단 + 하단 푸셔를 동시에 길게 누름 → 3회 진동 후 바늘이 회전하면 페어링 모드\n3. 앱에서 스캔 시작")
             }
             .alert("기기 삭제", isPresented: $showForgetConfirm) {
                 Button("삭제", role: .destructive) { ble.forgetDevice() }

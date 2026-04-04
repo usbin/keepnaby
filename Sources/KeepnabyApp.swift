@@ -2,7 +2,7 @@ import SwiftUI
 import UserNotifications
 
 @main
-struct KronabyApp: App {
+struct KeepnabyApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var bleManager = BLEManager()
     @StateObject private var actionManager = ButtonActionManager()
@@ -72,7 +72,7 @@ class AppDelegate: NSObject, UIApplicationDelegate {
     func applicationWillTerminate(_ application: UIApplication) {
         // 앱 종료 시 로컬 알림 예약
         let content = UNMutableNotificationContent()
-        content.title = "Kronaby 연결 끊김"
+        content.title = "Keepnaby 연결 끊김"
         content.body = "앱이 종료되어 시계 연결이 끊겼습니다. 탭하여 앱을 다시 실행하세요."
         content.sound = .default
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)

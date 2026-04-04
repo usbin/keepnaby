@@ -1,7 +1,7 @@
 import Foundation
 
-// Minimal MsgPack encoder/decoder for Kronaby BLE protocol.
-// Only supports the subset Kronaby uses: int, bool, string, array, map, nil.
+// Minimal MsgPack encoder/decoder for Keepnaby BLE protocol.
+// Supports: int, bool, string, array, map, nil.
 
 enum MsgPackValue: Equatable {
     case int(Int64)

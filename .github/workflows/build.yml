@@ -43,8 +43,8 @@ jobs:
       - name: Build for device (unsigned)
         run: |
           xcodebuild build \
-            -project Kronaby.xcodeproj \
-            -scheme Kronaby \
+            -project Keepnaby.xcodeproj \
+            -scheme Keepnaby \
             -destination 'generic/platform=iOS' \
             -configuration Release \
             -derivedDataPath build \
@@ -56,14 +56,14 @@ jobs:
       - name: Package .ipa
         run: |
           mkdir -p Payload
-          cp -r build/Build/Products/Release-iphoneos/Kronaby.app Payload/
-          zip -r Kronaby.ipa Payload
+          cp -r build/Build/Products/Release-iphoneos/Keepnaby.app Payload/
+          zip -r Keepnaby.ipa Payload
 
       - name: Upload .ipa artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Kronaby-ipa
-          path: Kronaby.ipa
+          name: Keepnaby-ipa
+          path: Keepnaby.ipa
           retention-days: 30
 
       - name: Create Release
@@ -73,7 +73,7 @@ jobs:
           tag_name: build-${{ github.run_number }}
           name: Build #${{ github.run_number }}
           body: "Automated build from commit ${{ github.sha }}"
-          files: Kronaby.ipa
+          files: Keepnaby.ipa
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

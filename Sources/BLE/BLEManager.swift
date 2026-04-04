@@ -147,7 +147,7 @@ final class BLEManager: NSObject, ObservableObject {
 
     private func sendDisconnectNotification() {
         let content = UNMutableNotificationContent()
-        content.title = "Kronaby 연결 끊김"
+        content.title = "Keepnaby 연결 끊김"
         content.body = "시계와의 연결이 끊겼습니다. 재연결을 시도합니다."
         content.sound = .default
         let request = UNNotificationRequest(identifier: "ble_disconnect", content: content, trigger: nil)
@@ -252,7 +252,7 @@ final class BLEManager: NSObject, ObservableObject {
 
     // MARK: - Filtering
 
-    // isKronabyDevice 불필요 — F431 서비스 필터로 스캔하므로 didDiscover에 오는 건 모두 Kronaby
+    // F431 서비스 필터로 스캔하므로 didDiscover에 오는 건 모두 Kronaby 시계
 }
 
 // MARK: - CBCentralManagerDelegate
@@ -459,7 +459,7 @@ extension BLEManager: CBPeripheralDelegate {
                         log("맵(name→id key=\(key)): \(commandMap.count)개")
                         foundMap = true
                     }
-                    // {0: {int_id: string_name}} — id→name (실제 Kronaby 형식)
+                    // {0: {int_id: string_name}} — id→name (실제 형식)
                     else if let innerMap = value as? [Int: Any] {
                         for (id, name) in innerMap {
                             if let nameStr = name as? String {
