@@ -137,15 +137,15 @@ final class NotificationMappingManager: ObservableObject {
         load()
         if filters.isEmpty {
             filters = [
-                NotificationFilter(id: "all", filterType: .allNotifications, vibration: .single, position: 11, enabled: false),
-                NotificationFilter(id: "call", filterType: .category(.incomingCall), vibration: .double, position: 12, enabled: false),
-                NotificationFilter(id: "missed", filterType: .category(.missedCall), vibration: .single, position: 1, enabled: false),
-                NotificationFilter(id: "social", filterType: .category(.social), vibration: .single, position: 2, enabled: false),
-                NotificationFilter(id: "email", filterType: .category(.email), vibration: .single, position: 3, enabled: false),
-                NotificationFilter(id: "schedule", filterType: .category(.schedule), vibration: .single, position: 4, enabled: false),
-                NotificationFilter(id: "news", filterType: .category(.news), vibration: .single, position: 5, enabled: false),
-                NotificationFilter(id: "entertain", filterType: .category(.entertainment), vibration: .single, position: 6, enabled: false),
-                NotificationFilter(id: "other", filterType: .category(.other), vibration: .single, position: 7, enabled: false),
+                NotificationFilter(id: "all", filterType: .allNotifications, vibration: VibrationPattern(rawValue: 11), position: 11, enabled: false),
+                NotificationFilter(id: "call", filterType: .category(.incomingCall), vibration: VibrationPattern(rawValue: 12), position: 12, enabled: false),
+                NotificationFilter(id: "missed", filterType: .category(.missedCall), vibration: VibrationPattern(rawValue: 1), position: 1, enabled: false),
+                NotificationFilter(id: "social", filterType: .category(.social), vibration: VibrationPattern(rawValue: 2), position: 2, enabled: false),
+                NotificationFilter(id: "email", filterType: .category(.email), vibration: VibrationPattern(rawValue: 3), position: 3, enabled: false),
+                NotificationFilter(id: "schedule", filterType: .category(.schedule), vibration: VibrationPattern(rawValue: 4), position: 4, enabled: false),
+                NotificationFilter(id: "news", filterType: .category(.news), vibration: VibrationPattern(rawValue: 5), position: 5, enabled: false),
+                NotificationFilter(id: "entertain", filterType: .category(.entertainment), vibration: VibrationPattern(rawValue: 6), position: 6, enabled: false),
+                NotificationFilter(id: "other", filterType: .category(.other), vibration: VibrationPattern(rawValue: 7), position: 7, enabled: false),
             ]
         }
     }
@@ -157,7 +157,7 @@ final class NotificationMappingManager: ObservableObject {
         filters.append(NotificationFilter(
             id: id,
             filterType: .app(bundleId: bundleId, name: name),
-            vibration: .single,
+            vibration: VibrationPattern(rawValue: 8),
             position: 8,
             enabled: true
         ))
