@@ -1,5 +1,6 @@
 import CoreLocation
 import UserNotifications
+import UIKit
 
 struct SavedLocation: Codable, Identifiable {
     let id: String

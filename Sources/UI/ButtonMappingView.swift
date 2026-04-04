@@ -74,6 +74,10 @@ struct ButtonMappingView: View {
         switch action.type {
         case .none: return "없음"
         case .findPhone: return "폰 찾기"
+        case .musicPlayPause: return "재생/일시정지"
+        case .musicNext: return "다음 곡"
+        case .musicPrevious: return "이전 곡"
+        case .recordLocation: return "위치 기록"
         case .iftttWebhook: return "IFTTT: \(action.iftttEventName)"
         case .shortcut: return "단축어: \(action.shortcutName)"
         case .urlRequest: return "URL"
