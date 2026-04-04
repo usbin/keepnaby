@@ -27,11 +27,23 @@
     <key>NSBluetoothPeripheralUsageDescription</key>
     <string>Kronaby 시계와 BLE 통신을 위해 블루투스 접근이 필요합니다.</string>
 
+    <!-- Location permissions -->
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>위치 기록 기능을 위해 현재 위치 접근이 필요합니다.</string>
+    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+    <string>백그라운드에서 시계 버튼으로 위치를 기록하려면 항상 위치 접근이 필요합니다.</string>
+
     <!-- Background BLE -->
     <key>UIBackgroundModes</key>
     <array>
         <string>bluetooth-central</string>
         <string>bluetooth-peripheral</string>
+    </array>
+
+    <!-- Map URL schemes -->
+    <key>LSApplicationQueriesSchemes</key>
+    <array>
+        <string>kakaomap</string>
     </array>
 
     <key>UISupportedInterfaceOrientations</key>

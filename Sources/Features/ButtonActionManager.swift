@@ -6,6 +6,10 @@ import UIKit
 enum ButtonActionType: String, Codable, CaseIterable {
     case none = "none"
     case findPhone = "find_phone"
+    case musicPlayPause = "music_play_pause"
+    case musicNext = "music_next"
+    case musicPrevious = "music_previous"
+    case recordLocation = "record_location"
     case iftttWebhook = "ifttt_webhook"
     case shortcut = "shortcut"
     case urlRequest = "url_request"
@@ -14,9 +18,23 @@ enum ButtonActionType: String, Codable, CaseIterable {
         switch self {
         case .none: return "없음"
         case .findPhone: return "폰 찾기"
+        case .musicPlayPause: return "음악: 재생/일시정지"
+        case .musicNext: return "음악: 다음 곡"
+        case .musicPrevious: return "음악: 이전 곡"
+        case .recordLocation: return "위치 기록"
         case .iftttWebhook: return "IFTTT Webhook"
-        case .shortcut: return "단축어 실행"
+        case .shortcut: return "단축어 실행 (앱 열림)"
         case .urlRequest: return "URL 요청"
+        }
+    }
+
+    var category: String {
+        switch self {
+        case .none: return ""
+        case .findPhone: return "기본"
+        case .musicPlayPause, .musicNext, .musicPrevious: return "음악"
+        case .recordLocation: return "위치"
+        case .iftttWebhook, .shortcut, .urlRequest: return "고급"
         }
     }
 }
@@ -57,13 +75,16 @@ final class ButtonActionManager: ObservableObject {
     @Published var iftttKey: String = ""
 
     private let findMyPhone = FindMyPhone()
+    private let musicController = MusicController()
+    var locationRecorder: LocationRecorder?
+
     private static let mappingsKey = "button_mappings"
     private static let iftttKeyKey = "ifttt_webhook_key"
 
     static let allButtons: [ButtonKey] = {
         var keys: [ButtonKey] = []
-        for button in [0, 2] {        // top, bottom
-            for event in [1, 3, 4, 5, 2] {  // 1click, 2click, 3click, 4click, long
+        for button in [0, 2] {
+            for event in [1, 3, 4, 5, 2] {
                 keys.append(ButtonKey(button: button, event: event))
             }
         }
@@ -93,11 +114,15 @@ final class ButtonActionManager: ObservableObject {
         case .none:
             break
         case .findPhone:
-            findMyPhone.play()
-            // Auto-stop after 10 seconds
-            DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
-                self?.findMyPhone.stop()
-            }
+            handleFindMyPhone()
+        case .musicPlayPause:
+            musicController.playPause()
+        case .musicNext:
+            musicController.nextTrack()
+        case .musicPrevious:
+            musicController.previousTrack()
+        case .recordLocation:
+            locationRecorder?.recordCurrentLocation()
         case .iftttWebhook:
             fireIFTTT(eventName: action.iftttEventName)
         case .shortcut:

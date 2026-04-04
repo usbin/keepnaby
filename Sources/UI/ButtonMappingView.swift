@@ -98,8 +98,22 @@ struct ActionEditView: View {
             Form {
                 Section("\(key.displayButton) — \(key.displayEvent)") {
                     Picker("동작", selection: $action.type) {
-                        ForEach(ButtonActionType.allCases, id: \.self) { type in
-                            Text(type.displayName).tag(type)
+                        Text("없음").tag(ButtonActionType.none)
+                        Section("기본") {
+                            Text("폰 찾기").tag(ButtonActionType.findPhone)
+                        }
+                        Section("음악") {
+                            Text("재생/일시정지").tag(ButtonActionType.musicPlayPause)
+                            Text("다음 곡").tag(ButtonActionType.musicNext)
+                            Text("이전 곡").tag(ButtonActionType.musicPrevious)
+                        }
+                        Section("위치") {
+                            Text("위치 기록").tag(ButtonActionType.recordLocation)
+                        }
+                        Section("고급") {
+                            Text("IFTTT Webhook").tag(ButtonActionType.iftttWebhook)
+                            Text("단축어 실행 (앱 열림)").tag(ButtonActionType.shortcut)
+                            Text("URL 요청").tag(ButtonActionType.urlRequest)
                         }
                     }
                 }

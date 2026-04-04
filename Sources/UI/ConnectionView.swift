@@ -3,6 +3,7 @@ import SwiftUI
 struct ConnectionView: View {
     @EnvironmentObject var ble: BLEManager
     @EnvironmentObject var actionManager: ButtonActionManager
+    @EnvironmentObject var locationRecorder: LocationRecorder
     @State private var showHelp = false
     @State private var showLog = true
     @State private var showMenu = false
@@ -11,6 +12,7 @@ struct ConnectionView: View {
     @State private var showTimeSetting = false
     @State private var showButtonMapping = false
     @State private var showComplications = false
+    @State private var showLocationHistory = false
 
     var body: some View {
         NavigationStack {
@@ -70,6 +72,12 @@ struct ConnectionView: View {
 
                         Button { ble.requestBattery() } label: {
                             Label("배터리", systemImage: "battery.100")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+
+                        Button { showLocationHistory = true } label: {
+                            Label("위치 기록", systemImage: "mappin.and.ellipse")
                                 .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.bordered)
@@ -199,6 +207,10 @@ struct ConnectionView: View {
             .sheet(isPresented: $showComplications) {
                 ComplicationsView()
                     .environmentObject(ble)
+            }
+            .sheet(isPresented: $showLocationHistory) {
+                LocationHistoryView()
+                    .environmentObject(locationRecorder)
             }
         }
     }
