@@ -72,6 +72,17 @@ struct ComplicationsView: View {
                             .frame(maxWidth: .infinity)
                     }
                 }
+
+                Section("디버그") {
+                    Button("onboarding_done(1) 재전송") {
+                        ble.sendCommand(name: "onboarding_done", value: 1)
+                        ble.log("디버그: onboarding_done(1) 재전송")
+                    }
+                    Button("onboarding_done(0) 전송") {
+                        ble.sendCommand(name: "onboarding_done", value: 0)
+                        ble.log("디버그: onboarding_done(0) 전송")
+                    }
+                }
             }
             .navigationTitle("크라운 설정")
             .navigationBarTitleDisplayMode(.inline)
