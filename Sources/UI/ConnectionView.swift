@@ -130,6 +130,11 @@ struct ConnectionView: View {
                                 UIPasteboard.general.string = ble.debugLog.joined(separator: "\n")
                             }
                             .font(.caption)
+                            Button("지우기") {
+                                ble.debugLog.removeAll()
+                            }
+                            .font(.caption)
+                            .foregroundStyle(.red)
                         }
                         .padding(.horizontal, 8)
 
