@@ -1,4 +1,4 @@
-name: Kronaby
+name: Keepnaby
 options:
   bundleIdPrefix: com.usbin
   deploymentTarget:
@@ -12,7 +12,7 @@ settings:
     CURRENT_PROJECT_VERSION: 1
 
 targets:
-  Kronaby:
+  Keepnaby:
     type: application
     platform: iOS
     sources:
@@ -20,12 +20,12 @@ targets:
     settings:
       base:
         INFOPLIST_FILE: Sources/Info.plist
-        PRODUCT_BUNDLE_IDENTIFIER: com.usbin.kronaby
+        PRODUCT_BUNDLE_IDENTIFIER: com.usbin.keepnaby
         CODE_SIGN_IDENTITY: ""
         CODE_SIGNING_REQUIRED: "NO"
         CODE_SIGNING_ALLOWED: "NO"
     entitlements:
-      path: Sources/Kronaby.entitlements
+      path: Sources/Keepnaby.entitlements
       properties:
         com.apple.developer.networking.wifi-info: true
         com.apple.developer.healthkit: true
