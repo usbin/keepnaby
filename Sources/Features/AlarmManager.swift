@@ -71,12 +71,6 @@ final class AlarmManager: ObservableObject {
 
     init() {
         load()
-        if alarms.isEmpty {
-            // 빈 알람 슬롯 1개
-            alarms = [
-                WatchAlarm(id: 1, hour: 7, minute: 0, enabled: false, days: [1, 2, 3, 4, 5])
-            ]
-        }
     }
 
     func addAlarm() {
