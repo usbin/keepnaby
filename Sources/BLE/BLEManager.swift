@@ -15,7 +15,8 @@ final class BLEManager: NSObject, ObservableObject {
     @Published var discoveredPeripherals: [CBPeripheral] = []
     @Published var commandMap: [String: Int] = [:]
     @Published var lastButtonEvent: ButtonEvent?
-    @Published var batteryInfo: [Int]?  // [percentage, chargingState]
+    @Published var batteryInfo: [Int]?  // [percentage, millivolts]
+    @Published var stepsInfo: [Int]?   // [steps, dayOfMonth] from steps_day
     @Published var debugLog: [String] = []
 
     private var centralManager: CBCentralManager!
@@ -144,6 +145,10 @@ final class BLEManager: NSObject, ObservableObject {
 
     func requestBattery() {
         sendCommand(name: "vbat", value: 0)
+    }
+
+    func requestSteps() {
+        sendCommand(name: "steps_now", value: 0)
     }
 
     func sendCommand(name: String, value: Any) {
@@ -488,6 +493,19 @@ extension BLEManager: CBPeripheralDelegate {
                 let percent = min(100, max(0, (mv - 2000) * 100 / 1000))
                 batteryInfo = [percent, mv]
                 log("배터리: \(mv)mV → \(percent)%")
+            } else if let dict = decoded as? [Int: Any],
+                      let stepsId = commandMap["steps_now"],
+                      let steps = dict[stepsId] as? Int {
+                stepsInfo = [steps, 0]
+                log("걸음수: \(steps)")
+            } else if let dict = decoded as? [Int: Any],
+                      let stepsId = commandMap["steps_day"],
+                      let arr = dict[stepsId] as? [Any],
+                      arr.count >= 2,
+                      let steps = arr[0] as? Int,
+                      let day = arr[1] as? Int {
+                stepsInfo = [steps, day]
+                log("걸음수(일별): \(steps) (day \(day))")
             } else {
                 log("수신(연결): \(String(describing: decoded))")
             }

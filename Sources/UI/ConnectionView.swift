@@ -16,6 +16,7 @@ struct ConnectionView: View {
     @State private var showLocationHistory = false
     @State private var showNotificationMapping = false
     @State private var showAlarm = false
+    @State private var showWatchSettings = false
 
     var body: some View {
         NavigationStack {
@@ -27,6 +28,14 @@ struct ConnectionView: View {
                         .frame(width: 12, height: 12)
                     Text(ble.connectionState.rawValue)
                         .font(.headline)
+                    if let steps = ble.stepsInfo {
+                        Spacer()
+                        Image(systemName: "figure.walk")
+                            .font(.caption)
+                        Text("\(steps[0])")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                     if let bat = ble.batteryInfo {
                         Spacer()
                         Image(systemName: batteryIcon(bat[0]))
@@ -93,6 +102,18 @@ struct ConnectionView: View {
 
                         Button { showAlarm = true } label: {
                             Label("무음 알람", systemImage: "alarm")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+
+                        Button { showWatchSettings = true } label: {
+                            Label("시계 설정", systemImage: "gearshape")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+
+                        Button { ble.requestSteps() } label: {
+                            Label("걸음수", systemImage: "figure.walk")
                                 .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.bordered)
@@ -239,6 +260,10 @@ struct ConnectionView: View {
             }
             .sheet(isPresented: $showAlarm) {
                 AlarmView()
+                    .environmentObject(ble)
+            }
+            .sheet(isPresented: $showWatchSettings) {
+                WatchSettingsView()
                     .environmentObject(ble)
             }
         }
