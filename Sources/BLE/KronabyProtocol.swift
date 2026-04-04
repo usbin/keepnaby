@@ -43,6 +43,32 @@ final class KronabyProtocol {
         return MsgPackEncoder.encode(arr)
     }
 
+    func encodeBinary(commandId: Int, payload: Data) -> Data {
+        // {commandId: bin(payload)} — MsgPack map with binary value
+        var data = Data()
+        // fixmap with 1 entry
+        data.append(0x81)
+        // key: commandId
+        if commandId <= 127 {
+            data.append(UInt8(commandId))
+        } else {
+            data.append(0xCC)
+            data.append(UInt8(commandId))
+        }
+        // value: bin8/bin16
+        let count = payload.count
+        if count <= 0xFF {
+            data.append(0xC4)
+            data.append(UInt8(count))
+        } else {
+            data.append(0xC5)
+            var be = UInt16(count).bigEndian
+            data.append(Data(bytes: &be, count: 2))
+        }
+        data.append(payload)
+        return data
+    }
+
     func decode(data: Data) -> Any? {
         guard let value = MsgPackDecoder.decode(data) else { return nil }
         return msgPackToAny(value)

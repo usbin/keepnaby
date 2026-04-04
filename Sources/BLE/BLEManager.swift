@@ -158,6 +158,19 @@ final class BLEManager: NSObject, ObservableObject {
         peripheral?.writeValue(data, for: char, type: .withResponse)
     }
 
+    func sendRawCommand(name: String, data payload: Data) {
+        guard let char = commandChar,
+              let cmdId = commandMap[name] else {
+            log("sendRawCommand 실패: \(name)")
+            return
+        }
+        // {cmdId: binary_data} — MsgPack map with bin value
+        let cmdData = protocol_.encodeBinary(commandId: cmdId, payload: payload)
+        let hex = cmdData.prefix(20).map { String(format: "%02X", $0) }.joined()
+        log("CMD(raw): \(name)(\(cmdId)) → \(hex)... (\(cmdData.count)B)")
+        peripheral?.writeValue(cmdData, for: char, type: .withResponse)
+    }
+
     // MARK: - Connection Sequence
 
     private func performHandshake() {

@@ -15,6 +15,7 @@ struct ConnectionView: View {
     @State private var showComplications = false
     @State private var showLocationHistory = false
     @State private var showNotificationMapping = false
+    @State private var showAlarm = false
 
     var body: some View {
         NavigationStack {
@@ -86,6 +87,12 @@ struct ConnectionView: View {
 
                         Button { showNotificationMapping = true } label: {
                             Label("알림 매핑", systemImage: "bell.badge")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+
+                        Button { showAlarm = true } label: {
+                            Label("무음 알람", systemImage: "alarm")
                                 .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.bordered)
@@ -223,6 +230,10 @@ struct ConnectionView: View {
             .sheet(isPresented: $showNotificationMapping) {
                 NotificationMappingView()
                     .environmentObject(notificationMappingManager)
+                    .environmentObject(ble)
+            }
+            .sheet(isPresented: $showAlarm) {
+                AlarmView()
                     .environmentObject(ble)
             }
         }
