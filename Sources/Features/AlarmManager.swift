@@ -6,7 +6,6 @@ struct WatchAlarm: Codable, Identifiable, Equatable {
     var minute: Int      // 0~59
     var enabled: Bool
     var days: Set<Int>   // 1=월, 2=화, 3=수, 4=목, 5=금, 6=토, 7=일 (ISO)
-    var vibSlot: Int = 1 // 진동 슬롯 1~3 (위치=진동횟수)
 
     var timeString: String {
         String(format: "%02d:%02d", hour, minute)
@@ -62,12 +61,16 @@ struct WatchAlarm: Codable, Identifiable, Equatable {
 
 final class AlarmManager: ObservableObject {
     @Published var alarms: [WatchAlarm] = []
+    @Published var alarmSlot: Int = 1  // 전체 알람의 바늘 위치 (1~3)
 
     private static let storageKey = "kronaby_alarms"
+    private static let slotKey = "kronaby_alarm_slot"
     static let maxAlarms = 8
 
     init() {
         load()
+        let saved = UserDefaults.standard.integer(forKey: Self.slotKey)
+        if saved > 0 { alarmSlot = saved }
     }
 
     func addAlarm() {
@@ -83,22 +86,30 @@ final class AlarmManager: ObservableObject {
     }
 
     func applyToWatch(ble: BLEManager) {
-        // 활성 알람만: [[시, 분, configByte], ...]
         let activeAlarms: [[Int]] = alarms
             .filter { $0.enabled }
             .map { [$0.hour, $0.minute, Int($0.configByte)] }
 
-        // 1. alert_assign — 알람을 vibSlot 위치에 할당 {위치: 1(=알람타입)}
-        for alarm in alarms where alarm.enabled {
-            ble.sendCommand(name: "alert_assign", value: [alarm.vibSlot: 1] as [Int: Int])
-            ble.log("alert_assign({\(alarm.vibSlot): 1}) — 위치 \(alarm.vibSlot)에 알람 할당")
+        // 1. alert_assign 초기화 (1~3 모두 알림으로)
+        for pos in 1...3 {
+            ble.sendCommand(name: "alert_assign", value: [pos: 0] as [Int: Int])
         }
 
-        // 2. 알람 데이터 전송
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            ble.sendCommand(name: "alarm", value: activeAlarms)
-            ble.log("alarm 전송: \(activeAlarms)")
+        // 2. 선택한 위치를 알람으로 할당
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            if !activeAlarms.isEmpty {
+                ble.sendCommand(name: "alert_assign", value: [self.alarmSlot: 1] as [Int: Int])
+                ble.log("alert_assign({\(self.alarmSlot): 1})")
+            }
+
+            // 3. 알람 데이터 전송
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                ble.sendCommand(name: "alarm", value: activeAlarms)
+                ble.log("alarm 전송: \(activeAlarms) → 위치 \(self.alarmSlot)")
+            }
         }
+
+        UserDefaults.standard.set(alarmSlot, forKey: Self.slotKey)
     }
 
     private func encodeBinary() -> Data {

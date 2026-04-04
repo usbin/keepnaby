@@ -1,5 +1,6 @@
 import CoreBluetooth
 import Combine
+import UserNotifications
 
 enum ConnectionState: String {
     case disconnected = "연결 끊김"
@@ -141,6 +142,15 @@ final class BLEManager: NSObject, ObservableObject {
         UserDefaults.standard.removeObject(forKey: Self.savedCommandMapKey)
         commandMap.removeAll()
         log("저장된 기기 정보 삭제")
+    }
+
+    private func sendDisconnectNotification() {
+        let content = UNMutableNotificationContent()
+        content.title = "Kronaby 연결 끊김"
+        content.body = "시계와의 연결이 끊겼습니다. 재연결을 시도합니다."
+        content.sound = .default
+        let request = UNNotificationRequest(identifier: "ble_disconnect", content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(request)
     }
 
     func requestBattery() {
@@ -321,10 +331,11 @@ extension BLEManager: CBCentralManagerDelegate {
         notifyChar = nil
 
         if !intentionalDisconnect, loadSavedCommandMap() != nil {
-            // 의도치 않은 끊김 → 자동 재연결
+            // 의도치 않은 끊김 → 자동 재연결 + 알림
             log("자동 재연결 시도...")
             connectionState = .connecting
             central.connect(peripheral, options: nil)
+            sendDisconnectNotification()
         } else {
             // 유저가 요청한 연결 해제
             intentionalDisconnect = false
