@@ -94,6 +94,10 @@ final class KronabyProtocol {
             return .int(Int64(i))
         case let s as String:
             return .string(s)
+        case let arr as [[Int]]:
+            return .array(arr.map { inner in
+                MsgPackValue.array(inner.map { .int(Int64($0)) })
+            })
         case let arr as [Int]:
             return .array(arr.map { .int(Int64($0)) })
         case let arr as [Any]:

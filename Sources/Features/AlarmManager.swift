@@ -92,27 +92,13 @@ final class AlarmManager: ObservableObject {
     }
 
     func applyToWatch(ble: BLEManager) {
-        // 헤더: [version(2), count(1), reserved(1)] + 알람 데이터
-        var payload = Data()
-
-        // Version (uint16 LE) = 1
-        var version = UInt16(1).littleEndian
-        payload.append(Data(bytes: &version, count: 2))
-
-        // Number of alarms
-        payload.append(UInt8(alarms.count))
-
-        // Reserved
-        payload.append(0)
-
-        // 각 알람 13바이트
-        for alarm in alarms {
-            payload.append(alarm.encode())
+        // 단순 형식: [[활성화(0/1), 시, 분], ...]
+        let alarmArrays: [[Int]] = alarms.map { alarm in
+            [alarm.enabled ? 1 : 0, alarm.hour, alarm.minute]
         }
 
-        // alarm 명령으로 raw bytes 전송
-        ble.sendRawCommand(name: "alarm", data: payload)
-        ble.log("alarm 전송: \(alarms.count)개 알람")
+        ble.sendCommand(name: "alarm", value: alarmArrays)
+        ble.log("alarm 전송: \(alarmArrays)")
     }
 
     func save() {
