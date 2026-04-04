@@ -28,3 +28,8 @@ targets:
       path: Sources/Kronaby.entitlements
       properties:
         com.apple.developer.networking.wifi-info: true
+        com.apple.developer.healthkit: true
+        com.apple.developer.healthkit.access: []
+    dependencies:
+      - framework: HealthKit.framework
+        embed: false

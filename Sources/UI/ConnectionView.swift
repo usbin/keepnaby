@@ -4,6 +4,7 @@ struct ConnectionView: View {
     @EnvironmentObject var ble: BLEManager
     @EnvironmentObject var actionManager: ButtonActionManager
     @EnvironmentObject var locationRecorder: LocationRecorder
+    @EnvironmentObject var notificationMappingManager: NotificationMappingManager
     @State private var showHelp = false
     @State private var showLog = true
     @State private var showMenu = false
@@ -13,6 +14,7 @@ struct ConnectionView: View {
     @State private var showButtonMapping = false
     @State private var showComplications = false
     @State private var showLocationHistory = false
+    @State private var showNotificationMapping = false
 
     var body: some View {
         NavigationStack {
@@ -78,6 +80,12 @@ struct ConnectionView: View {
 
                         Button { showLocationHistory = true } label: {
                             Label("위치 기록", systemImage: "mappin.and.ellipse")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+
+                        Button { showNotificationMapping = true } label: {
+                            Label("알림 매핑", systemImage: "bell.badge")
                                 .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.bordered)
@@ -211,6 +219,11 @@ struct ConnectionView: View {
             .sheet(isPresented: $showLocationHistory) {
                 LocationHistoryView()
                     .environmentObject(locationRecorder)
+            }
+            .sheet(isPresented: $showNotificationMapping) {
+                NotificationMappingView()
+                    .environmentObject(notificationMappingManager)
+                    .environmentObject(ble)
             }
         }
     }

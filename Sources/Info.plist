@@ -40,6 +40,10 @@
         <string>bluetooth-peripheral</string>
     </array>
 
+    <!-- HealthKit (걸음수 읽기) -->
+    <key>NSHealthShareUsageDescription</key>
+    <string>걸음수 목표 달성률을 확인하기 위해 건강 데이터 접근이 필요합니다.</string>
+
     <!-- Map URL schemes -->
     <key>LSApplicationQueriesSchemes</key>
     <array>

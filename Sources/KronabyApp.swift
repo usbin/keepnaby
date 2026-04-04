@@ -5,6 +5,7 @@ struct KronabyApp: App {
     @StateObject private var bleManager = BLEManager()
     @StateObject private var actionManager = ButtonActionManager()
     @StateObject private var locationRecorder = LocationRecorder()
+    @StateObject private var notificationMappingManager = NotificationMappingManager()
 
     var body: some Scene {
         WindowGroup {
@@ -12,6 +13,7 @@ struct KronabyApp: App {
                 .environmentObject(bleManager)
                 .environmentObject(actionManager)
                 .environmentObject(locationRecorder)
+                .environmentObject(notificationMappingManager)
                 .onAppear {
                     actionManager.locationRecorder = locationRecorder
                     locationRecorder.onRecorded = { [weak bleManager] in

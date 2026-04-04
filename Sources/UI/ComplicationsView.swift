@@ -1,4 +1,5 @@
 import SwiftUI
+import HealthKit
 
 // APK 디컴파일 기준 크라운 deviceComplicationMode 값
 // set_complication_mode: [slotId=4(crown), mode]
@@ -38,9 +39,18 @@ struct ComplicationsView: View {
     @EnvironmentObject var ble: BLEManager
     @State private var crownMode: CrownMode = .date
     @State private var saved = false
+    @State private var stepGoal: Int = 10000
+    @State private var stepLength: Int = 75 // cm
+    @State private var todaySteps: Int = 0
+    @State private var healthKitAuthorized = false
+    @State private var stepGoalSaved = false
 
     private static let savedKey = "kronaby_crown_mode"
+    private static let stepGoalKey = "kronaby_step_goal"
+    private static let stepLengthKey = "kronaby_step_length"
     private static let crownSlotId = 4 // Slot.TopPusher (Crown)
+
+    private let healthStore = HKHealthStore()
 
     var body: some View {
         NavigationStack {
@@ -73,27 +83,98 @@ struct ComplicationsView: View {
                     }
                 }
 
+                // MARK: - 걸음수 목표
+                Section("걸음수 목표") {
+                    Stepper("목표: \(stepGoal.formatted()) 걸음", value: $stepGoal, in: 1000...50000, step: 1000)
+
+                    Stepper("보폭: \(stepLength) cm", value: $stepLength, in: 40...120, step: 5)
+
+                    Button("목표 시계에 전송") {
+                        applyStepGoal()
+                    }
+                    .frame(maxWidth: .infinity)
+
+                    if stepGoalSaved {
+                        Text("목표 전송 완료!")
+                            .foregroundStyle(.green)
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+
+                // MARK: - 오늘 걸음수 달성률
+                Section("오늘 걸음수") {
+                    if healthKitAuthorized {
+                        HStack {
+                            Text("걸음수")
+                            Spacer()
+                            Text("\(todaySteps.formatted()) / \(stepGoal.formatted())")
+                                .foregroundStyle(.secondary)
+                        }
+
+                        let progress = stepGoal > 0 ? min(1.0, Double(todaySteps) / Double(stepGoal)) : 0
+                        ProgressView(value: progress)
+                            .tint(progress >= 1.0 ? .green : .blue)
+
+                        HStack {
+                            Text("달성률")
+                            Spacer()
+                            Text("\(Int(progress * 100))%")
+                                .font(.headline)
+                                .foregroundStyle(progress >= 1.0 ? .green : .primary)
+                        }
+
+                        Button("새로고침") {
+                            fetchTodaySteps()
+                        }
+                        .font(.caption)
+                    } else {
+                        Button("건강 데이터 접근 허용") {
+                            requestHealthKit()
+                        }
+                        Text("HealthKit 권한이 필요합니다.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
                 Section("디버그") {
-                    Button("map_settings 읽기") {
-                        // map_cmd처럼 map_settings도 설정 키 매핑을 반환할 수 있음
-                        ble.sendCommand(name: "map_settings", value: 0)
-                        ble.log("디버그: map_settings(0) 전송")
-                        // 500ms 후 read
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                            if let p = ble.peripheral, let c = ble.commandChar {
-                                p.readValue(for: c)
-                                ble.log("map_settings read 요청")
+                    Button("map_settings (Array 인코딩)") {
+                        // map_cmd처럼 Array [cmd_id, batch] 로 전송
+                        if let cmdId = ble.commandMap["map_settings"] {
+                            let data = KronabyProtocol().encodeArray([cmdId, 0])
+                            if let c = ble.commandChar {
+                                ble.peripheral?.writeValue(data, for: c, type: .withResponse)
+                                ble.log("map_settings Array: \(data.map { String(format: "%02X", $0) }.joined())")
+                            }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                                if let p = ble.peripheral, let c = ble.commandChar {
+                                    p.readValue(for: c)
+                                    ble.log("map_settings read")
+                                }
                             }
                         }
                     }
-                    Button("settings 현재값 읽기") {
-                        ble.sendCommand(name: "settings", value: 0)
-                        ble.log("디버그: settings(0) 전송")
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                            if let p = ble.peripheral, let c = ble.commandChar {
-                                p.readValue(for: c)
-                                ble.log("settings read 요청")
+                    Button("settings read (공식앱 설정 후)") {
+                        // 공식 앱이 설정한 후 settings 값을 읽기
+                        if let cmdId = ble.commandMap["settings"] {
+                            let data = KronabyProtocol().encodeArray([cmdId, 0])
+                            if let c = ble.commandChar {
+                                ble.peripheral?.writeValue(data, for: c, type: .withResponse)
+                                ble.log("settings Array: \(data.map { String(format: "%02X", $0) }.joined())")
                             }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                                if let p = ble.peripheral, let c = ble.commandChar {
+                                    p.readValue(for: c)
+                                    ble.log("settings read")
+                                }
+                            }
+                        }
+                    }
+                    Button("set_complication_mode hex 확인") {
+                        let mode = crownMode.rawValue
+                        for slot in [3, 4, 7, 8] {
+                            let data = KronabyProtocol().encode(commandId: 45, value: [slot, mode])
+                            ble.log("slot \(slot): \(data.map { String(format: "%02X", $0) }.joined())")
                         }
                     }
                 }
@@ -103,6 +184,15 @@ struct ComplicationsView: View {
             .onAppear {
                 let raw = UserDefaults.standard.integer(forKey: Self.savedKey)
                 crownMode = CrownMode(rawValue: raw) ?? .date
+
+                let savedGoal = UserDefaults.standard.integer(forKey: Self.stepGoalKey)
+                if savedGoal > 0 { stepGoal = savedGoal }
+                let savedLength = UserDefaults.standard.integer(forKey: Self.stepLengthKey)
+                if savedLength > 0 { stepLength = savedLength }
+
+                // HealthKit 상태 확인 및 걸음수 조회
+                checkHealthKitAuth()
+
                 // comp 관련 명령 검색
                 let compCmds = ble.commandMap.filter { $0.key.contains("comp") || $0.key.contains("face") || $0.key.contains("dash") || $0.key.contains("crown") || $0.key.contains("magic") }
                 ble.log("comp 관련 명령: \(compCmds)")
@@ -133,5 +223,64 @@ struct ComplicationsView: View {
             ble.log("크라운 설정: \(crownMode.displayName) (mode=\(mode))")
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { saved = false }
         }
+    }
+
+    // MARK: - Step Goal
+
+    private func applyStepGoal() {
+        UserDefaults.standard.set(stepGoal, forKey: Self.stepGoalKey)
+        UserDefaults.standard.set(stepLength, forKey: Self.stepLengthKey)
+
+        // step_goal 명령 전송 (걸음수 목표)
+        ble.sendCommand(name: "step_goal", value: stepGoal)
+        ble.log("step_goal(\(stepGoal)) 전송")
+
+        // step_length 명령 전송 (보폭, cm)
+        ble.sendCommand(name: "step_length", value: stepLength)
+        ble.log("step_length(\(stepLength)) 전송")
+
+        stepGoalSaved = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { stepGoalSaved = false }
+    }
+
+    // MARK: - HealthKit
+
+    private func checkHealthKitAuth() {
+        guard HKHealthStore.isHealthDataAvailable() else { return }
+        let stepType = HKQuantityType.quantityType(forIdentifier: .stepCount)!
+        let status = healthStore.authorizationStatus(for: stepType)
+        if status == .sharingAuthorized {
+            healthKitAuthorized = true
+            fetchTodaySteps()
+        }
+    }
+
+    private func requestHealthKit() {
+        guard HKHealthStore.isHealthDataAvailable() else { return }
+        let stepType = HKQuantityType.quantityType(forIdentifier: .stepCount)!
+        healthStore.requestAuthorization(toShare: nil, read: [stepType]) { success, _ in
+            DispatchQueue.main.async {
+                // HealthKit은 read 권한 거부해도 success=true 반환할 수 있음
+                // 실제 데이터 조회로 확인
+                healthKitAuthorized = true
+                fetchTodaySteps()
+            }
+        }
+    }
+
+    private func fetchTodaySteps() {
+        guard HKHealthStore.isHealthDataAvailable() else { return }
+        let stepType = HKQuantityType.quantityType(forIdentifier: .stepCount)!
+        let now = Date()
+        let startOfDay = Calendar.current.startOfDay(for: now)
+        let predicate = HKQuery.predicateForSamples(withStart: startOfDay, end: now, options: .strictStartDate)
+
+        let query = HKStatisticsQuery(quantityType: stepType, quantitySamplePredicate: predicate, options: .cumulativeSum) { _, result, _ in
+            DispatchQueue.main.async {
+                let steps = result?.sumQuantity()?.doubleValue(for: .count()) ?? 0
+                todaySteps = Int(steps)
+            }
+        }
+        healthStore.execute(query)
     }
 }
