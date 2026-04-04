@@ -102,18 +102,13 @@ final class AlarmManager: ObservableObject {
     }
 
     func applyToWatch(ble: BLEManager) {
-        // [[시, 분, configByte], ...] 형식
+        // [[시, 분, config], ...] — config: 1=활성, 0=비활성
+        // 요일 필터링은 이 펌웨어에서 미지원
         let alarmArrays: [[Int]] = alarms.map { alarm in
-            if alarm.enabled {
-                // 요일 없으면 1(1회 알람), 있으면 configByte
-                let config = alarm.days.isEmpty ? 1 : Int(alarm.configByte)
-                return [alarm.hour, alarm.minute, config]
-            } else {
-                return [alarm.hour, alarm.minute, 0]
-            }
+            [alarm.hour, alarm.minute, alarm.enabled ? 1 : 0]
         }
         ble.sendCommand(name: "alarm", value: alarmArrays)
-        ble.log("alarm 전송: \(alarmArrays) (days: \(alarms.map { Array($0.days).sorted() }))")
+        ble.log("alarm 전송: \(alarmArrays)")
     }
 
     private func encodeBinary() -> Data {
