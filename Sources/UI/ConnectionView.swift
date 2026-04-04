@@ -5,6 +5,8 @@ struct ConnectionView: View {
     @EnvironmentObject var actionManager: ButtonActionManager
     @State private var showHelp = false
     @State private var showLog = true
+    @State private var showMenu = false
+    @State private var showForgetConfirm = false
     @State private var showCalibration = false
     @State private var showTimeSetting = false
     @State private var showButtonMapping = false
@@ -13,13 +15,21 @@ struct ConnectionView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 12) {
-                // Connection status
+                // Connection status + battery
                 HStack {
                     Circle()
                         .fill(statusColor)
                         .frame(width: 12, height: 12)
                     Text(ble.connectionState.rawValue)
                         .font(.headline)
+                    if let bat = ble.batteryInfo {
+                        Spacer()
+                        Image(systemName: batteryIcon(bat[0]))
+                            .foregroundStyle(bat[0] <= 15 ? .red : .green)
+                        Text("\(bat[0])%")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
                 // Last button event
@@ -54,6 +64,12 @@ struct ConnectionView: View {
 
                         Button { showComplications = true } label: {
                             Label("크라운", systemImage: "crown")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+
+                        Button { ble.requestBattery() } label: {
+                            Label("배터리", systemImage: "battery.100")
                                 .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.bordered)
@@ -121,13 +137,7 @@ struct ConnectionView: View {
                     Button("스캔 중지") { ble.stopScan() }
                         .buttonStyle(.bordered)
                 case .connected:
-                    HStack {
-                        Button("연결 해제") { ble.disconnect() }
-                            .buttonStyle(.bordered)
-                        Button("기기 삭제") { ble.forgetDevice() }
-                            .buttonStyle(.bordered)
-                            .tint(.red)
-                    }
+                    EmptyView()
                 case .bluetoothOff:
                     Text("블루투스를 켜주세요")
                         .foregroundStyle(.red)
@@ -146,14 +156,33 @@ struct ConnectionView: View {
                 leading: Button(action: { showLog.toggle() }) {
                     Image(systemName: showLog ? "terminal.fill" : "terminal")
                 },
-                trailing: Button(action: { showHelp = true }) {
-                    Image(systemName: "questionmark.circle")
+                trailing: Menu {
+                    Button { showHelp = true } label: {
+                        Label("페어링 도움말", systemImage: "questionmark.circle")
+                    }
+                    if ble.connectionState == .connected {
+                        Divider()
+                        Button { ble.disconnect() } label: {
+                            Label("연결 해제", systemImage: "wifi.slash")
+                        }
+                        Button(role: .destructive) { showForgetConfirm = true } label: {
+                            Label("기기 삭제", systemImage: "trash")
+                        }
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
                 }
             )
             .alert("시계 페어링 초기화", isPresented: $showHelp) {
                 Button("확인", role: .cancel) {}
             } message: {
                 Text("시계가 검색되지 않으면 기존 페어링을 먼저 삭제해야 합니다.\n\n1. iPhone 설정 → 블루투스 → Kronaby 옆 (i) → 이 기기 지우기\n2. 시계 상단 + 하단 푸셔를 동시에 길게 누름 → 3회 진동 후 바늘이 회전하면 페어링 모드\n3. 앱에서 스캔 시작")
+            }
+            .alert("기기 삭제", isPresented: $showForgetConfirm) {
+                Button("삭제", role: .destructive) { ble.forgetDevice() }
+                Button("취소", role: .cancel) {}
+            } message: {
+                Text("저장된 연결 정보가 모두 삭제됩니다.\n다시 연결하려면 시계를 페어링 모드로 전환 후 스캔해야 합니다.")
             }
             .sheet(isPresented: $showCalibration) {
                 CalibrationView(isPresented: $showCalibration)
@@ -181,5 +210,13 @@ struct ConnectionView: View {
         case .disconnected: return .red
         case .bluetoothOff: return .gray
         }
+    }
+
+    private func batteryIcon(_ percent: Int) -> String {
+        if percent > 75 { return "battery.100" }
+        if percent > 50 { return "battery.75" }
+        if percent > 25 { return "battery.50" }
+        if percent > 10 { return "battery.25" }
+        return "battery.0"
     }
 }

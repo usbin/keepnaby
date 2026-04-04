@@ -1,6 +1,7 @@
 import Foundation
 
-struct ButtonEvent: Equatable {
+struct ButtonEvent: Identifiable {
+    let id = UUID()
     let button: Int    // 0=top, 1=crown, 2=bottom
     let eventType: Int // 1=single, 2=long start, 3=double, etc.
 
@@ -67,6 +68,8 @@ final class KronabyProtocol {
             return .int(Int64(i))
         case let s as String:
             return .string(s)
+        case let arr as [Int]:
+            return .array(arr.map { .int(Int64($0)) })
         case let arr as [Any]:
             return .array(arr.map { anyToMsgPack($0) })
         case let dict as [Int: Any]:

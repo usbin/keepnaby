@@ -15,6 +15,7 @@ final class BLEManager: NSObject, ObservableObject {
     @Published var discoveredPeripherals: [CBPeripheral] = []
     @Published var commandMap: [String: Int] = [:]
     @Published var lastButtonEvent: ButtonEvent?
+    @Published var batteryInfo: [Int]?  // [percentage, chargingState]
     @Published var debugLog: [String] = []
 
     private var centralManager: CBCentralManager!
@@ -130,6 +131,10 @@ final class BLEManager: NSObject, ObservableObject {
         UserDefaults.standard.removeObject(forKey: Self.savedCommandMapKey)
         commandMap.removeAll()
         log("저장된 기기 정보 삭제")
+    }
+
+    func requestBattery() {
+        sendCommand(name: "vbat", value: 0)
     }
 
     func sendCommand(name: String, value: Any) {
@@ -423,6 +428,16 @@ extension BLEManager: CBPeripheralDelegate {
             if let event = protocol_.parseButtonEvent(decoded, commandMap: commandMap) {
                 lastButtonEvent = event
                 log("버튼: \(event.buttonName) \(event.eventName)")
+            } else if let dict = decoded as? [Int: Any],
+                      let vbatId = commandMap["vbat"],
+                      let arr = dict[vbatId] as? [Any],
+                      arr.count >= 2,
+                      let v1 = arr[0] as? Int,
+                      let v2 = arr[1] as? Int {
+                batteryInfo = [v1, v2]
+                log("배터리: \(v1)%, 상태: \(v2)")
+            } else {
+                log("수신(연결): \(String(describing: decoded))")
             }
         }
     }
