@@ -6,6 +6,7 @@ struct WatchAlarm: Codable, Identifiable, Equatable {
     var minute: Int      // 0~59
     var enabled: Bool
     var days: Set<Int>   // 1=월, 2=화, 3=수, 4=목, 5=금, 6=토, 7=일 (ISO)
+    var vibSlot: Int = 1 // 진동 슬롯 1~3 (위치=진동횟수)
 
     var timeString: String {
         String(format: "%02d:%02d", hour, minute)
@@ -82,10 +83,10 @@ final class AlarmManager: ObservableObject {
     }
 
     func applyToWatch(ble: BLEManager) {
-        // 활성 알람만 전송 (비활성 제외)
+        // 활성 알람만 전송: [[시, 분, dayConfig, vibSlot], ...]
         let activeAlarms: [[Int]] = alarms
             .filter { $0.enabled }
-            .map { [$0.hour, $0.minute, Int($0.configByte)] }
+            .map { [$0.hour, $0.minute, Int($0.configByte), $0.vibSlot] }
 
         ble.sendCommand(name: "alarm", value: activeAlarms)
         ble.log("alarm 전송: \(activeAlarms)")

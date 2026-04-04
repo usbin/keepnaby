@@ -124,7 +124,17 @@ struct AlarmRow: View {
                 }
             }
 
-            DayPicker(days: $alarm.days)
+            HStack {
+                DayPicker(days: $alarm.days)
+                Spacer()
+                Picker("진동", selection: $alarm.vibSlot) {
+                    Text("1회").tag(1)
+                    Text("2회").tag(2)
+                    Text("3회").tag(3)
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 120)
+            }
 
             Text(alarm.daysString)
                 .font(.caption2)
