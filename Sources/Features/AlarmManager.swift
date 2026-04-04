@@ -88,8 +88,17 @@ final class AlarmManager: ObservableObject {
             .filter { $0.enabled }
             .map { [$0.hour, $0.minute, Int($0.configByte)] }
 
-        ble.sendCommand(name: "alarm", value: activeAlarms)
-        ble.log("alarm 전송: \(activeAlarms)")
+        // 1. alert_assign — 알람을 vibSlot 위치에 할당 {위치: 1(=알람타입)}
+        for alarm in alarms where alarm.enabled {
+            ble.sendCommand(name: "alert_assign", value: [alarm.vibSlot: 1] as [Int: Int])
+            ble.log("alert_assign({\(alarm.vibSlot): 1}) — 위치 \(alarm.vibSlot)에 알람 할당")
+        }
+
+        // 2. 알람 데이터 전송
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            ble.sendCommand(name: "alarm", value: activeAlarms)
+            ble.log("alarm 전송: \(activeAlarms)")
+        }
     }
 
     private func encodeBinary() -> Data {
