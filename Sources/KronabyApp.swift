@@ -21,6 +21,14 @@ struct KronabyApp: App {
                     locationRecorder.onRecorded = { [weak bleManager] in
                         bleManager?.sendCommand(name: "vibrator_start", value: [150])
                     }
+                    // 연결 완료 시 설정 자동 재전송
+                    bleManager.onConnected = { [weak bleManager, weak notificationMappingManager] in
+                        guard let ble = bleManager, let mapping = notificationMappingManager else { return }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                            mapping.applyToWatch(ble: ble)
+                            ble.log("연결 복원 → ANCS 필터 재전송")
+                        }
+                    }
                     UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
                 }
                 .onReceive(bleManager.$lastButtonEvent) { event in

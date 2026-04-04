@@ -25,10 +25,6 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
-      - name: Install iOS Simulator Runtime
-        run: |
-          xcodebuild -downloadPlatform iOS || true
-
       - name: Build for device (unsigned)
         run: |
           xcodebuild build \
@@ -40,7 +36,6 @@ jobs:
             CODE_SIGN_IDENTITY="-" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=YES \
-            ASSETCATALOG_COMPILER_SKIP_APP_STORE_DEPLOYMENT=YES \
             AD_HOC_CODE_SIGNING_ALLOWED=YES
 
       - name: Package .ipa

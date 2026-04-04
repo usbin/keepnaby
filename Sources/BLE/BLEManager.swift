@@ -127,6 +127,7 @@ final class BLEManager: NSObject, ObservableObject {
     }
 
     private var intentionalDisconnect = false
+    var onConnected: (() -> Void)?
 
     func disconnect() {
         intentionalDisconnect = true
@@ -241,6 +242,7 @@ final class BLEManager: NSObject, ObservableObject {
                 self?.sendCommand(name: "config_base", value: [1, 1])
             }
             self.log("연결됨! 영점 조정 → 시각 설정 순서로 진행하세요.")
+            self.onConnected?()
         }
     }
 
@@ -399,6 +401,7 @@ extension BLEManager: CBPeripheralDelegate {
                 }
                 connectionState = .connected
                 log("재연결 완료!")
+                onConnected?()
             } else {
                 performHandshake()
             }
