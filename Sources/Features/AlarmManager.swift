@@ -86,14 +86,18 @@ final class AlarmManager: ObservableObject {
     }
 
     func applyToWatch(ble: BLEManager) {
-        // 바이너리 형식: 헤더(4B) + 알람(13B each)
-        ble.sendRawCommand(name: "alarm", data: encodeBinary())
-
-        // MsgPack 형식도 시도 (둘 중 하나가 동작할 수 있음)
-        let activeAlarms: [[Int]] = alarms
-            .filter { $0.enabled }
-            .map { [$0.hour, $0.minute] }
-        ble.log("alarm 바이너리 + MsgPack 전송: \(activeAlarms)")
+        // [[시, 분, configByte], ...] 형식
+        // configByte: 1=enabled(1회), 255=즉시(모든요일)
+        let alarmArrays: [[Int]] = alarms.map { alarm in
+            if alarm.enabled {
+                let config = alarm.days.isEmpty ? 1 : Int(alarm.configByte)
+                return [alarm.hour, alarm.minute, config]
+            } else {
+                return [alarm.hour, alarm.minute, 0]
+            }
+        }
+        ble.sendCommand(name: "alarm", value: alarmArrays)
+        ble.log("alarm 전송: \(alarmArrays)")
     }
 
     private func encodeBinary() -> Data {
