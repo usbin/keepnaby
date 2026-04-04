@@ -1,174 +1,146 @@
 import Foundation
-import UserNotifications
 
-// MARK: - 알림 카테고리 (원본 Kronaby 앱 기준)
+// MARK: - ANCS 카테고리 (Kronaby 펌웨어 기준)
 
-enum NotificationCategory: String, Codable, CaseIterable, Identifiable {
-    case phone = "phone"
-    case sms = "sms"
-    case email = "email"
-    case calendar = "calendar"
-    case social = "social"
-    case news = "news"
-    case ifttt = "ifttt"
-    case other = "other"
+enum AncsCategory: Int, Codable, CaseIterable, Identifiable {
+    case other = 0
+    case incomingCall = 1
+    case missedCall = 2
+    case voicemail = 3
+    case social = 4
+    case schedule = 5
+    case email = 6
+    case news = 7
+    case healthFitness = 8
+    case businessFinance = 9
+    case location = 10
+    case entertainment = 11
 
-    var id: String { rawValue }
+    var id: Int { rawValue }
 
     var displayName: String {
         switch self {
-        case .phone: return "전화"
-        case .sms: return "문자"
-        case .email: return "이메일"
-        case .calendar: return "캘린더"
-        case .social: return "소셜 미디어"
-        case .news: return "뉴스"
-        case .ifttt: return "IFTTT"
         case .other: return "기타"
+        case .incomingCall: return "수신 전화"
+        case .missedCall: return "부재중 전화"
+        case .voicemail: return "음성 메일"
+        case .social: return "소셜 미디어"
+        case .schedule: return "일정"
+        case .email: return "이메일"
+        case .news: return "뉴스"
+        case .healthFitness: return "건강/피트니스"
+        case .businessFinance: return "비즈니스/금융"
+        case .location: return "위치"
+        case .entertainment: return "엔터테인먼트"
         }
     }
 
     var systemImage: String {
         switch self {
-        case .phone: return "phone.fill"
-        case .sms: return "message.fill"
-        case .email: return "envelope.fill"
-        case .calendar: return "calendar"
-        case .social: return "person.2.fill"
-        case .news: return "newspaper.fill"
-        case .ifttt: return "bolt.fill"
         case .other: return "app.badge.fill"
+        case .incomingCall: return "phone.fill"
+        case .missedCall: return "phone.arrow.down.left"
+        case .voicemail: return "recordingtape"
+        case .social: return "person.2.fill"
+        case .schedule: return "calendar"
+        case .email: return "envelope.fill"
+        case .news: return "newspaper.fill"
+        case .healthFitness: return "heart.fill"
+        case .businessFinance: return "chart.line.uptrend.xyaxis"
+        case .location: return "location.fill"
+        case .entertainment: return "film"
         }
     }
 
-    // 해당 카테고리에 매칭되는 앱 Bundle ID 패턴
-    var bundlePatterns: [String] {
+    // ANCS 카테고리 비트마스크: 1 << (rawValue + 8)
+    var bitmask: Int {
+        1 << (rawValue + 8)
+    }
+}
+
+enum VibrationPattern: Int, Codable, CaseIterable, Identifiable {
+    case single = 1
+    case double = 2
+    case triple = 3
+
+    var id: Int { rawValue }
+
+    var displayName: String {
         switch self {
-        case .phone: return ["com.apple.mobilephone", "com.apple.InCallService"]
-        case .sms: return ["com.apple.MobileSMS", "com.apple.Messages"]
-        case .email: return ["com.apple.mobilemail", "com.google.Gmail", "com.microsoft.Office.Outlook"]
-        case .calendar: return ["com.apple.mobilecal", "com.google.calendar"]
-        case .social: return ["com.facebook", "com.instagram", "com.twitter", "com.tencent", "net.daum.kakao", "com.linecorp"]
-        case .news: return ["com.apple.news"]
-        case .ifttt: return ["com.ifttt.ifttt"]
-        case .other: return []
+        case .single: return "진동 1회"
+        case .double: return "진동 2회"
+        case .triple: return "진동 3회"
         }
     }
 }
 
-// MARK: - 알림 매핑 (카테고리 → 시계 숫자)
+// MARK: - 필터 설정
 
-struct NotificationMapping: Codable, Equatable {
-    var category: NotificationCategory
-    var position: Int  // 0 = 비활성, 1-12 = 시계 숫자 위치
+struct NotificationFilter: Codable, Equatable, Identifiable {
+    var id: Int // 필터 인덱스 (0~34)
+    var category: AncsCategory
+    var vibration: VibrationPattern
     var enabled: Bool
-
-    static func defaultMappings() -> [NotificationMapping] {
-        NotificationCategory.allCases.map {
-            NotificationMapping(category: $0, position: 0, enabled: false)
-        }
-    }
 }
 
 // MARK: - Manager
 
 final class NotificationMappingManager: ObservableObject {
-    @Published var mappings: [NotificationMapping] = NotificationMapping.defaultMappings()
+    @Published var filters: [NotificationFilter] = []
 
-    private static let storageKey = "kronaby_notification_mappings"
+    private static let storageKey = "kronaby_ancs_filters"
 
     init() {
         load()
-    }
-
-    func getMapping(for category: NotificationCategory) -> NotificationMapping {
-        mappings.first(where: { $0.category == category }) ?? NotificationMapping(category: category, position: 0, enabled: false)
-    }
-
-    func setMapping(for category: NotificationCategory, position: Int, enabled: Bool) {
-        if let index = mappings.firstIndex(where: { $0.category == category }) {
-            mappings[index].position = position
-            mappings[index].enabled = enabled
+        if filters.isEmpty {
+            // 기본 필터: 주요 카테고리별 하나씩
+            filters = [
+                NotificationFilter(id: 0, category: .incomingCall, vibration: .double, enabled: false),
+                NotificationFilter(id: 1, category: .missedCall, vibration: .single, enabled: false),
+                NotificationFilter(id: 2, category: .social, vibration: .single, enabled: false),
+                NotificationFilter(id: 3, category: .email, vibration: .single, enabled: false),
+                NotificationFilter(id: 4, category: .schedule, vibration: .single, enabled: false),
+                NotificationFilter(id: 5, category: .news, vibration: .single, enabled: false),
+                NotificationFilter(id: 6, category: .entertainment, vibration: .single, enabled: false),
+                NotificationFilter(id: 7, category: .other, vibration: .single, enabled: false),
+            ]
         }
-        save()
     }
 
-    /// 활성화된 매핑만 반환
-    func activeMappings() -> [NotificationMapping] {
-        mappings.filter { $0.enabled && $0.position > 0 }
-    }
+    // MARK: - Apply to Watch
 
-    /// 알림 카테고리에 해당하는 시계 위치 반환 (0이면 매핑 없음)
-    func positionForBundleID(_ bundleID: String) -> Int {
-        for mapping in activeMappings() {
-            if mapping.category.bundlePatterns.contains(where: { bundleID.hasPrefix($0) }) {
-                return mapping.position
-            }
-        }
-        // other 카테고리가 활성화되어 있으면 기타로 처리
-        let otherMapping = getMapping(for: .other)
-        if otherMapping.enabled && otherMapping.position > 0 {
-            return otherMapping.position
-        }
-        return 0
-    }
-
-    /// 시계에 알림 필터 설정 전송
     func applyToWatch(ble: BLEManager) {
-        // ancs_filter (cmd 4) — ANCS 알림 필터 설정
-        // 활성화된 카테고리의 위치값 배열 전송
-        let positionArray = NotificationCategory.allCases.map { category -> Int in
-            let mapping = getMapping(for: category)
-            return mapping.enabled ? mapping.position : 0
-        }
-
-        ble.sendCommand(name: "ancs_filter", value: positionArray)
-        ble.log("ancs_filter 전송: \(positionArray)")
-
-        // alert_assign (cmd 3) — 알림 타입별 동작 비트마스크 설정
-        // 활성화된 카테고리에 대해 비트마스크 구성
-        var bitmask0 = 0, bitmask1 = 0, bitmask2 = 0
-        for (index, category) in NotificationCategory.allCases.enumerated() {
-            let mapping = getMapping(for: category)
-            if mapping.enabled && mapping.position > 0 {
-                if index < 8 { bitmask0 |= (1 << index) }
-                else if index < 16 { bitmask1 |= (1 << (index - 8)) }
-                else { bitmask2 |= (1 << (index - 16)) }
+        for filter in filters {
+            if filter.enabled {
+                // 활성 필터: [index, categoryBitmask, attribute(255=all), "", vibrationPattern]
+                ble.sendCommand(name: "ancs_filter", value: [
+                    filter.id,
+                    filter.category.bitmask,
+                    255, // Attribute.All
+                    "",
+                    filter.vibration.rawValue
+                ] as [Any])
+                ble.log("ancs_filter[\(filter.id)]: \(filter.category.displayName) → \(filter.vibration.displayName)")
+            } else {
+                // 비활성 필터: [index] (삭제)
+                ble.sendCommand(name: "ancs_filter", value: [filter.id])
+                ble.log("ancs_filter[\(filter.id)]: 삭제")
             }
         }
-        ble.sendCommand(name: "alert_assign", value: [bitmask0, bitmask1, bitmask2])
-        ble.log("alert_assign 전송: [\(bitmask0), \(bitmask1), \(bitmask2)]")
-    }
-
-    /// 알림 수신 시 시계 바늘 이동 명령 전송
-    func handleNotification(bundleID: String, ble: BLEManager) {
-        let position = positionForBundleID(bundleID)
-        guard position > 0 else { return }
-
-        // alert (cmd 2) — 알림 표시 (시계 바늘이 해당 위치로 이동)
-        ble.sendCommand(name: "alert", value: position)
-        ble.log("alert 전송: \(bundleID) → 위치 \(position)")
     }
 
     // MARK: - Persistence
 
-    private func save() {
-        if let data = try? JSONEncoder().encode(mappings) {
+    func save() {
+        if let data = try? JSONEncoder().encode(filters) {
             UserDefaults.standard.set(data, forKey: Self.storageKey)
         }
     }
 
     private func load() {
         if let data = UserDefaults.standard.data(forKey: Self.storageKey),
-           let decoded = try? JSONDecoder().decode([NotificationMapping].self, from: data) {
-            // 기존 저장된 매핑 복원 + 새로 추가된 카테고리 보충
-            var restored = decoded
-            for category in NotificationCategory.allCases {
-                if !restored.contains(where: { $0.category == category }) {
-                    restored.append(NotificationMapping(category: category, position: 0, enabled: false))
-                }
-            }
-            mappings = restored
+           let decoded = try? JSONDecoder().decode([NotificationFilter].self, from: data) {
+            filters = decoded
         }
     }
 }
