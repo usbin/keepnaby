@@ -41,6 +41,9 @@ struct WatchSettingsView: View {
     // Vibration
     @State private var vibStrength: Int = 0  // 0=normal, 1=stronger
 
+    // Steps
+    @State private var stepGoal: Int = 4000
+
     @State private var applied = false
 
     private static let triggerTopKey = "kronaby_trigger_top"
@@ -53,6 +56,7 @@ struct WatchSettingsView: View {
     private static let worldTimeHKey = "kronaby_wt_hour"
     private static let worldTimeMKey = "kronaby_wt_min"
     private static let vibStrengthKey = "kronaby_vib_strength"
+    private static let stepGoalKey = "kronaby_step_goal_v2"
 
     var body: some View {
         NavigationStack {
@@ -141,6 +145,27 @@ struct WatchSettingsView: View {
                         .foregroundStyle(.secondary)
                 }
 
+                // MARK: - 걸음수
+                Section("걸음수") {
+                    HStack {
+                        Text("현재")
+                        Spacer()
+                        if let steps = ble.stepsInfo {
+                            Text("\(steps[0])걸음")
+                                .font(.headline)
+                        } else {
+                            Text("—")
+                                .foregroundStyle(.secondary)
+                        }
+                        Button("새로고침") {
+                            ble.requestSteps()
+                        }
+                        .font(.caption)
+                    }
+
+                    Stepper("목표: \(stepGoal.formatted())걸음", value: $stepGoal, in: 1000...50000, step: 1000)
+                }
+
                 // MARK: - 적용
                 Section {
                     Button("시계에 적용") {
@@ -186,6 +211,11 @@ struct WatchSettingsView: View {
         }
         ble.log("vibrator_config: \(vibStrength == 1 ? "강하게(600ms)" : "일반(150ms)")")
 
+        // Steps target
+        ble.sendCommand(name: "steps_target", value: stepGoal)
+        ble.sendCommand(name: "config_base", value: [1, 1])
+        ble.log("steps_target: \(stepGoal)")
+
         saveSettings()
         applied = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) { applied = false }
@@ -202,6 +232,7 @@ struct WatchSettingsView: View {
         UserDefaults.standard.set(worldTimeHour, forKey: Self.worldTimeHKey)
         UserDefaults.standard.set(worldTimeMin, forKey: Self.worldTimeMKey)
         UserDefaults.standard.set(vibStrength, forKey: Self.vibStrengthKey)
+        UserDefaults.standard.set(stepGoal, forKey: Self.stepGoalKey)
     }
 
     private func loadSettings() {
@@ -215,5 +246,7 @@ struct WatchSettingsView: View {
         worldTimeHour = UserDefaults.standard.integer(forKey: Self.worldTimeHKey)
         worldTimeMin = UserDefaults.standard.integer(forKey: Self.worldTimeMKey)
         vibStrength = UserDefaults.standard.integer(forKey: Self.vibStrengthKey)
+        let savedGoal = UserDefaults.standard.integer(forKey: Self.stepGoalKey)
+        if savedGoal > 0 { stepGoal = savedGoal }
     }
 }
