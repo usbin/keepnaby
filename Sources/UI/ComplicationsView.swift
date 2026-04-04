@@ -1,27 +1,35 @@
 import SwiftUI
 
-// APK 디컴파일 기준 크라운 complication 모드값
-// set_complication_mode: [slotId=8(crown), mode]
+// APK 디컴파일 기준 크라운 deviceComplicationMode 값
+// set_complication_mode: [slotId=4(crown), mode]
 enum CrownMode: Int, CaseIterable, Identifiable {
     case date = 0
-    case timer = 1
-    case stopwatch = 2
+    case time = 1
     case remote = 3
-    case dice = 4
-    case stoptime = 5
-    case none = 6
+    case steps = 4
+    case stoptime = 6
+    case dice = 9
+    case timer = 14
+    case none = 15
+    case stopwatch = 23
+    case dayOfWeek = 28
+    case battery = 46
 
     var id: Int { rawValue }
 
     var displayName: String {
         switch self {
         case .date: return "날짜 확인"
-        case .timer: return "타이머"
-        case .stopwatch: return "스톱워치"
+        case .time: return "시간"
         case .remote: return "리모트"
-        case .dice: return "주사위"
+        case .steps: return "걸음 수"
         case .stoptime: return "스톱타임"
+        case .dice: return "주사위"
+        case .timer: return "타이머"
         case .none: return "없음"
+        case .stopwatch: return "스톱워치"
+        case .dayOfWeek: return "요일"
+        case .battery: return "배터리"
         }
     }
 }
@@ -32,7 +40,7 @@ struct ComplicationsView: View {
     @State private var saved = false
 
     private static let savedKey = "kronaby_crown_mode"
-    private static let crownSlotId = 8 // Slot.MagicKey
+    private static let crownSlotId = 4 // Slot.TopPusher (Crown)
 
     var body: some View {
         NavigationStack {
@@ -56,7 +64,6 @@ struct ComplicationsView: View {
                     Button("시계에 적용") {
                         apply()
                     }
-                    .buttonStyle(.borderedProminent)
                     .frame(maxWidth: .infinity)
 
                     if saved {
@@ -76,7 +83,6 @@ struct ComplicationsView: View {
     }
 
     private func apply() {
-        // set_complication_mode: [slotId, mode]
         ble.sendCommand(name: "set_complication_mode", value: [Self.crownSlotId, crownMode.rawValue])
         UserDefaults.standard.set(crownMode.rawValue, forKey: Self.savedKey)
         saved = true
