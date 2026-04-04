@@ -12,7 +12,7 @@ struct NotificationMappingView: View {
         NavigationStack {
             Form {
                 Section {
-                    Text("알림 카테고리 또는 특정 앱의 알림을 시계에서 받습니다.\n바늘이 지정한 숫자를 가리키고 진동합니다.\n설정은 시계에 저장되어 앱 없이도 동작합니다.")
+                    Text("알림이 오면 시계 바늘이 지정 숫자를 가리키고 진동합니다.\n바늘 위치 = 진동 횟수 (예: 3시 = 진동 3회)\n설정은 시계에 저장되어 앱 없이도 동작합니다.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -126,22 +126,16 @@ struct NotificationMappingView: View {
             }
 
             if filter.wrappedValue.enabled {
-                HStack(spacing: 16) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "clock")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Picker("위치", selection: filter.position) {
-                            ForEach(1...12, id: \.self) { num in
-                                Text("\(num)시").tag(num)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                    }
-
-                    Picker("진동", selection: filter.vibration) {
-                        ForEach(VibrationPattern.allCases) { pattern in
-                            Text(pattern.displayName).tag(pattern)
+                HStack(spacing: 4) {
+                    Image(systemName: "clock")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text("바늘 위치:")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Picker("위치", selection: filter.vibration) {
+                        ForEach(VibrationPattern.allPositions) { pos in
+                            Text("\(pos.rawValue)시").tag(pos)
                         }
                     }
                     .pickerStyle(.menu)

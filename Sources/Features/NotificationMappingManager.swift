@@ -56,20 +56,13 @@ enum AncsCategory: Int, Codable, CaseIterable, Identifiable {
     static var allBitmask: Int { 0xFFFFFF }
 }
 
-enum VibrationPattern: Int, Codable, CaseIterable, Identifiable {
-    case single = 1
-    case double = 2
-    case triple = 3
-
+struct VibrationPattern: Codable, Equatable, Hashable, Identifiable {
+    var rawValue: Int
     var id: Int { rawValue }
 
-    var displayName: String {
-        switch self {
-        case .single: return "진동 1회"
-        case .double: return "진동 2회"
-        case .triple: return "진동 3회"
-        }
-    }
+    var displayName: String { "\(rawValue)시 방향" }
+
+    static let allPositions: [VibrationPattern] = (1...12).map { VibrationPattern(rawValue: $0) }
 }
 
 // MARK: - 필터 타입
