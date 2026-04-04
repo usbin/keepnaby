@@ -26,7 +26,7 @@ struct LocationHistoryView: View {
                                 }
                             } label: {
                                 VStack(alignment: .leading, spacing: 4) {
-                                    Text(loc.placeName)
+                                    Text(loc.placeName.isEmpty ? loc.coordinateString : loc.placeName)
                                         .font(.body)
                                         .foregroundStyle(.primary)
                                     HStack {

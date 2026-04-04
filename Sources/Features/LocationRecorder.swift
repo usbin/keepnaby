@@ -39,7 +39,13 @@ final class LocationRecorder: NSObject, ObservableObject, CLLocationManagerDeleg
         manager.requestWhenInUseAuthorization()
     }
 
+    private var lastRecordTime: Date = .distantPast
+
     func recordCurrentLocation() {
+        // 3초 이내 중복 호출 방지
+        let now = Date()
+        guard now.timeIntervalSince(lastRecordTime) > 3.0 else { return }
+        lastRecordTime = now
         requestPermission()
         manager.requestLocation()
     }
@@ -48,31 +54,42 @@ final class LocationRecorder: NSObject, ObservableObject, CLLocationManagerDeleg
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let loc = locations.last else { return }
+
+        // 같은 좌표 중복 저장 방지 (1초 이내)
+        if let last = savedLocations.first,
+           abs(last.timestamp.timeIntervalSinceNow) < 3.0 {
+            return
+        }
+
+        let entryId = UUID().uuidString
         let entry = SavedLocation(
-            id: UUID().uuidString,
+            id: entryId,
             latitude: loc.coordinate.latitude,
             longitude: loc.coordinate.longitude,
             timestamp: Date(),
-            placeName: "위치 확인 중..."
+            placeName: ""
         )
         savedLocations.insert(entry, at: 0)
         saveLocations()
 
-        // Reverse geocode
+        // Reverse geocode → 완료 후 알림
         geocoder.reverseGeocodeLocation(loc) { [weak self] placemarks, _ in
-            guard let self, let pm = placemarks?.first else { return }
-            let name = [pm.locality, pm.subLocality, pm.thoroughfare]
-                .compactMap { $0 }
-                .joined(separator: " ")
-            if let idx = self.savedLocations.firstIndex(where: { $0.id == entry.id }) {
-                self.savedLocations[idx].placeName = name.isEmpty ? "알 수 없는 위치" : name
+            guard let self else { return }
+            let name: String
+            if let pm = placemarks?.first {
+                name = [pm.locality, pm.subLocality, pm.thoroughfare]
+                    .compactMap { $0 }
+                    .joined(separator: " ")
+            } else {
+                name = ""
+            }
+            let finalName = name.isEmpty ? entry.coordinateString : name
+            if let idx = self.savedLocations.firstIndex(where: { $0.id == entryId }) {
+                self.savedLocations[idx].placeName = finalName
                 self.saveLocations()
             }
-            self.sendNotification(entry: self.savedLocations.first(where: { $0.id == entry.id }) ?? entry)
+            self.sendNotification(title: "위치 저장됨", body: finalName)
         }
-
-        // Send notification immediately with coordinates
-        sendNotification(entry: entry)
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
