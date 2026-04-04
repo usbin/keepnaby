@@ -18,17 +18,33 @@ struct WatchAlarm: Codable, Identifiable, Equatable {
         return days.sorted().map { names[$0] }.joined(separator: " ")
     }
 
-    // 요일 비트마스크: bit1=월, bit2=화, ..., bit7=일
+    // ISO 요일 → Kronaby 비표준 요일 변환
+    // ISO: 1=월, 2=화, 3=수, 4=목, 5=금, 6=토, 7=일
+    // Kronaby: 화=0, 수=1, 목=2, 금=3, 토=4, 일=5, 월=6
+    private static func isoToKronaby(_ isoDay: Int) -> Int {
+        switch isoDay {
+        case 1: return 6  // 월
+        case 2: return 0  // 화
+        case 3: return 1  // 수
+        case 4: return 2  // 목
+        case 5: return 3  // 금
+        case 6: return 4  // 토
+        case 7: return 5  // 일
+        default: return 0
+        }
+    }
+
+    // Kronaby 요일 비트마스크
     var daysBitmask: Int {
         var mask = 0
         for day in days {
-            mask |= (1 << day)
+            let kronabyDay = Self.isoToKronaby(day)
+            mask |= (1 << (kronabyDay + 1))  // bit 0 = enabled, bits 1-7 = days
         }
         return mask
     }
 
-    // config byte: (daysBitmask << 1) | enabled
-    // 실제: bits 1-7 = days, bit 0 = enabled
+    // config byte: bit 0 = enabled, bits 1-7 = Kronaby 요일 비트마스크
     var configByte: UInt8 {
         var config = daysBitmask
         if enabled { config |= 1 }
@@ -87,9 +103,9 @@ final class AlarmManager: ObservableObject {
 
     func applyToWatch(ble: BLEManager) {
         // [[시, 분, configByte], ...] 형식
-        // configByte: 1=enabled(1회), 255=즉시(모든요일)
         let alarmArrays: [[Int]] = alarms.map { alarm in
             if alarm.enabled {
+                // 요일 없으면 1(1회 알람), 있으면 configByte
                 let config = alarm.days.isEmpty ? 1 : Int(alarm.configByte)
                 return [alarm.hour, alarm.minute, config]
             } else {
@@ -97,7 +113,7 @@ final class AlarmManager: ObservableObject {
             }
         }
         ble.sendCommand(name: "alarm", value: alarmArrays)
-        ble.log("alarm 전송: \(alarmArrays)")
+        ble.log("alarm 전송: \(alarmArrays) (days: \(alarms.map { Array($0.days).sorted() }))")
     }
 
     private func encodeBinary() -> Data {
