@@ -82,12 +82,13 @@ final class AlarmManager: ObservableObject {
     }
 
     func applyToWatch(ble: BLEManager) {
-        // [[시, 분, configByte], ...]
-        let alarmArrays: [[Int]] = alarms.map { alarm in
-            [alarm.hour, alarm.minute, Int(alarm.configByte)]
-        }
-        ble.sendCommand(name: "alarm", value: alarmArrays)
-        ble.log("alarm 전송: \(alarmArrays)")
+        // 활성 알람만 전송 (비활성 제외)
+        let activeAlarms: [[Int]] = alarms
+            .filter { $0.enabled }
+            .map { [$0.hour, $0.minute, Int($0.configByte)] }
+
+        ble.sendCommand(name: "alarm", value: activeAlarms)
+        ble.log("alarm 전송: \(activeAlarms)")
     }
 
     private func encodeBinary() -> Data {

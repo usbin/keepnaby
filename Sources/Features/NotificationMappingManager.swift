@@ -88,24 +88,12 @@ struct NotificationSlot: Codable, Identifiable {
     }
 }
 
-// MARK: - 앱 필터
-
-struct AppFilter: Codable, Identifiable, Equatable {
-    var id: String  // bundleId
-    var name: String
-    var bundleId: String
-    var vibration: Int  // 1~3 (위치 = 진동횟수)
-    var enabled: Bool
-}
-
 // MARK: - Manager
 
 final class NotificationMappingManager: ObservableObject {
     @Published var slots: [NotificationSlot] = []
-    @Published var appFilters: [AppFilter] = []
 
     private static let slotsKey = "kronaby_ancs_slots_v5"
-    private static let appFiltersKey = "kronaby_ancs_apps_v1"
 
     init() {
         load()
@@ -118,35 +106,21 @@ final class NotificationMappingManager: ObservableObject {
         }
     }
 
-    func addAppFilter(bundleId: String, name: String, vibration: Int = 1) {
-        guard !appFilters.contains(where: { $0.bundleId == bundleId }) else { return }
-        appFilters.append(AppFilter(
-            id: bundleId, name: name, bundleId: bundleId,
-            vibration: vibration, enabled: true
-        ))
-        save()
-    }
-
-    func removeAppFilter(id: String) {
-        appFilters.removeAll { $0.id == id }
-        save()
-    }
-
     // MARK: - Apply
 
     func applyToWatch(ble: BLEManager) {
         var delay: Double = 0
 
-        // 1. 기존 필터 삭제 (인덱스 0~20)
-        for i in 0...20 {
+        // 1. 기존 필터 삭제 (인덱스 0~5)
+        for i in 0...5 {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
                 ble.sendCommand(name: "ancs_filter", value: [i])
             }
-            delay += 0.05
+            delay += 0.1
         }
-        ble.log("필터 삭제 (0~20)")
+        ble.log("필터 삭제 (0~5)")
 
-        delay += 0.5
+        delay += 0.3
 
         // 2. 카테고리 슬롯 (인덱스 1~3)
         for slot in slots where slot.enabled && !slot.categories.isEmpty {
@@ -162,20 +136,6 @@ final class NotificationMappingManager: ObservableObject {
             }
             delay += 0.3
         }
-
-        // 3. 앱 필터 (인덱스 10~)
-        for (i, filter) in appFilters.enumerated() where filter.enabled {
-            let idx = 10 + i
-            let vib = filter.vibration
-
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                ble.sendCommand(name: "ancs_filter", value: [
-                    idx, AncsCategory.allBitmask, 0, filter.bundleId, vib
-                ] as [Any])
-                ble.log("앱필터[\(idx)]: \(filter.name) → vib=\(vib)")
-            }
-            delay += 0.3
-        }
     }
 
     // MARK: - Persistence
@@ -184,9 +144,6 @@ final class NotificationMappingManager: ObservableObject {
         if let data = try? JSONEncoder().encode(slots) {
             UserDefaults.standard.set(data, forKey: Self.slotsKey)
         }
-        if let data = try? JSONEncoder().encode(appFilters) {
-            UserDefaults.standard.set(data, forKey: Self.appFiltersKey)
-        }
     }
 
     private func load() {
@@ -194,24 +151,6 @@ final class NotificationMappingManager: ObservableObject {
            let decoded = try? JSONDecoder().decode([NotificationSlot].self, from: data) {
             slots = decoded
         }
-        if let data = UserDefaults.standard.data(forKey: Self.appFiltersKey),
-           let decoded = try? JSONDecoder().decode([AppFilter].self, from: data) {
-            appFilters = decoded
-        }
     }
 
-    // 자주 쓰는 앱
-    static let commonApps: [(name: String, bundleId: String)] = [
-        ("카카오톡", "com.iwilab.KakaoTalk"),
-        ("라인", "jp.naver.line"),
-        ("텔레그램", "ph.telegra.Telegraph"),
-        ("왓츠앱", "net.whatsapp.WhatsApp"),
-        ("인스타그램", "com.burbn.instagram"),
-        ("Outlook", "com.microsoft.Office.Outlook"),
-        ("Gmail", "com.google.Gmail"),
-        ("슬랙", "com.tinyspeck.chatlyio"),
-        ("디스코드", "com.hammerandchisel.discord"),
-        ("X (Twitter)", "com.atebits.Tweetie2"),
-        ("유튜브", "com.google.ios.youtube"),
-    ]
 }
