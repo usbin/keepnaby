@@ -74,13 +74,27 @@ struct ComplicationsView: View {
                 }
 
                 Section("디버그") {
-                    Button("onboarding_done(1) 재전송") {
-                        ble.sendCommand(name: "onboarding_done", value: 1)
-                        ble.log("디버그: onboarding_done(1) 재전송")
+                    Button("map_settings 읽기") {
+                        // map_cmd처럼 map_settings도 설정 키 매핑을 반환할 수 있음
+                        ble.sendCommand(name: "map_settings", value: 0)
+                        ble.log("디버그: map_settings(0) 전송")
+                        // 500ms 후 read
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                            if let p = ble.peripheral, let c = ble.commandChar {
+                                p.readValue(for: c)
+                                ble.log("map_settings read 요청")
+                            }
+                        }
                     }
-                    Button("onboarding_done(0) 전송") {
-                        ble.sendCommand(name: "onboarding_done", value: 0)
-                        ble.log("디버그: onboarding_done(0) 전송")
+                    Button("settings 현재값 읽기") {
+                        ble.sendCommand(name: "settings", value: 0)
+                        ble.log("디버그: settings(0) 전송")
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                            if let p = ble.peripheral, let c = ble.commandChar {
+                                p.readValue(for: c)
+                                ble.log("settings read 요청")
+                            }
+                        }
                     }
                 }
             }

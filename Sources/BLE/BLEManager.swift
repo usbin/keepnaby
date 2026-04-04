@@ -19,8 +19,8 @@ final class BLEManager: NSObject, ObservableObject {
     @Published var debugLog: [String] = []
 
     private var centralManager: CBCentralManager!
-    private var peripheral: CBPeripheral?
-    private var commandChar: CBCharacteristic?
+    private(set) var peripheral: CBPeripheral?
+    private(set) var commandChar: CBCharacteristic?
     private var notifyChar: CBCharacteristic?
 
     private let protocol_ = KronabyProtocol()
