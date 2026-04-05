@@ -111,8 +111,15 @@ final class NotificationMappingManager: ObservableObject {
     func applyToWatch(ble: BLEManager) {
         var delay: Double = 0
 
+        // 0. vibrator_config — 진동 패턴 정의 (BLE 캡처에서 발견: 펌웨어가 이 패턴을 사용)
+        ble.sendCommand(name: "vibrator_config", value: [8, 50, 25, 80, 25, 35, 25, 35, 25, 40, 25, 90])
+        ble.sendCommand(name: "vibrator_config", value: [9, 31, 30, 61, 30, 110, 300, 31, 30, 61, 30, 110])
+        ble.sendCommand(name: "vibrator_config", value: [10, 31, 30, 190, 300, 50, 30, 90, 300, 50, 30, 90])
+        ble.log("vibrator_config 패턴 8/9/10 전송")
+        delay += 0.5
+
         // 1. alert_assign — Array 형식 [pos1, pos2, pos3]
-        // 0 = ANCS notification, 1 = silent alarm
+        // 0 = 비활성, 1 = 활성 (ANCS 또는 alarm)
         var assignArray = [0, 0, 0]
         let alarmSlot = UserDefaults.standard.integer(forKey: "kronaby_alarm_slot")
         if alarmSlot >= 1 && alarmSlot <= 3 {
@@ -145,6 +152,16 @@ final class NotificationMappingManager: ObservableObject {
                 ble.log("ancs_filter[\(idx)]: bitmask=\(bitmask), vib=\(vib)")
             }
             delay += 0.3
+        }
+
+        // 4. remote_data — 슬롯별 바늘 위치 설정 (BLE 캡처에서 발견)
+        let remoteDelay = delay + 0.5
+        for slot in slots where slot.enabled && !slot.categories.isEmpty {
+            let pos = slot.id
+            DispatchQueue.main.asyncAfter(deadline: .now() + remoteDelay + Double(pos - 1) * 0.3) {
+                ble.sendCommand(name: "remote_data", value: [10, 0, pos])
+                ble.log("remote_data([10, 0, \(pos)])")
+            }
         }
     }
 

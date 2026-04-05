@@ -26,12 +26,18 @@ struct KeepnabyApp: App {
                     bleManager.onConnected = { [weak bleManager, weak notificationMappingManager] in
                         guard let ble = bleManager else { return }
                         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                            // 1. 크라운 + ANCS 바늘 활성화 (세 번째 값 18이 핵심!)
+                            // 1. vibrator_config — 진동 패턴 (펌웨어가 ANCS 알림 시 사용)
+                            ble.sendCommand(name: "vibrator_config", value: [8, 50, 25, 80, 25, 35, 25, 35, 25, 40, 25, 90])
+                            ble.sendCommand(name: "vibrator_config", value: [9, 31, 30, 61, 30, 110, 300, 31, 30, 61, 30, 110])
+                            ble.sendCommand(name: "vibrator_config", value: [10, 31, 30, 190, 300, 50, 30, 90, 300, 50, 30, 90])
+                            ble.log("재전송: vibrator_config 패턴 8/9/10")
+
+                            // 2. 크라운 + ANCS 바늘 활성화 (세 번째 값 18이 핵심!)
                             let crownMode = UserDefaults.standard.integer(forKey: "kronaby_crown_mode")
                             ble.sendCommand(name: "complications", value: [5, crownMode, 18])
                             ble.log("재전송: complications([5, \(crownMode), 18])")
 
-                            // 2. 걸음수 목표
+                            // 3. 걸음수 목표
                             let stepGoal = UserDefaults.standard.integer(forKey: "kronaby_step_goal_v2")
                             if stepGoal > 0 {
                                 ble.sendCommand(name: "steps_target", value: stepGoal)
@@ -39,10 +45,10 @@ struct KeepnabyApp: App {
                                 ble.log("재전송: steps_target=\(stepGoal)")
                             }
 
-                            // 3. ANCS 필터 + alert_assign
+                            // 4. ANCS 필터 + alert_assign + remote_data
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                                 notificationMappingManager?.applyToWatch(ble: ble)
-                                ble.log("재전송: alert_assign + ANCS 필터")
+                                ble.log("재전송: vibrator_config + alert_assign + ANCS 필터 + remote_data")
                             }
                         }
                     }
