@@ -114,19 +114,24 @@ struct NotificationMappingView: View {
                     Text("remote_data 테스트:")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Button("remote_data [10, 0, 1]") {
-                        ble.sendCommand(name: "remote_data", value: [10, 0, 1])
-                        ble.log("remote_data([10, 0, 1]) — 1분 위치")
+                    Button("remote_data [0, 1]") {
+                        ble.sendCommand(name: "remote_data", value: [0, 1])
+                        ble.log("remote_data([0, 1]) — hour=0, min=1")
                     }
                     .font(.caption)
-                    Button("remote_data [10, 0, 2]") {
-                        ble.sendCommand(name: "remote_data", value: [10, 0, 2])
-                        ble.log("remote_data([10, 0, 2]) — 2분 위치")
+                    Button("remote_data [0, 2]") {
+                        ble.sendCommand(name: "remote_data", value: [0, 2])
+                        ble.log("remote_data([0, 2]) — hour=0, min=2")
                     }
                     .font(.caption)
-                    Button("remote_data [10, 0, 3]") {
-                        ble.sendCommand(name: "remote_data", value: [10, 0, 3])
-                        ble.log("remote_data([10, 0, 3]) — 3분 위치")
+                    Button("remote_data [0, 3]") {
+                        ble.sendCommand(name: "remote_data", value: [0, 3])
+                        ble.log("remote_data([0, 3]) — hour=0, min=3")
+                    }
+                    .font(.caption)
+                    Button("remote_data [1, 0]") {
+                        ble.sendCommand(name: "remote_data", value: [1, 0])
+                        ble.log("remote_data([1, 0]) — hour=1, min=0")
                     }
                     .font(.caption)
                     Button("74개 명령 전체 덤프") {
