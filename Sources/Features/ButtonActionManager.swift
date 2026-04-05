@@ -227,10 +227,34 @@ final class ButtonActionManager: ObservableObject {
             bleManager?.sendCommand(name: "vibrator_start", value: [150, 100, 150])
             bleManager?.log("확장입력 완료: \(extendedBits) = \(value)")
 
-            // 바늘 애니메이션: 0분부터 1분씩 이동 → 최종 위치
-            animateHands(to: value) { [weak self] in
+            // 바늘 이동: 55분(현재) → 최종 위치, 3초 유지 후 복귀
+            isExtendedMode = false
+            extendedBits = []
+            showExtendedValue(value)
+        }
+    }
+
+    // MARK: - Hand Movement
+
+    private func moveHands(to position: Int) {
+        bleManager?.sendCommand(name: "stepper_goto", value: [0, position])
+        bleManager?.sendCommand(name: "stepper_goto", value: [1, position])
+    }
+
+    /// 55분 → 최종 위치 이동, 3초 유지 후 복귀 + 액션 실행
+    private func showExtendedValue(_ value: Int) {
+        // 55분에서 최종 위치로 이동 (1.5초 대기 후)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            guard let self else { return }
+            self.moveHands(to: value)
+            self.bleManager?.log("확장입력 바늘 → \(value)분")
+
+            // 3초 유지 후 recalibrate 종료 → datetime 복귀
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
                 guard let self else { return }
-                // 애니메이션 완료 후 명령 실행
+                self.exitRecalibrateAndSyncTime()
+
+                // 액션 실행
                 if value < self.extendedMappings.count {
                     let action = self.extendedMappings[value]
                     if action.type != .none {
@@ -239,47 +263,6 @@ final class ButtonActionManager: ObservableObject {
                     }
                 }
             }
-
-            isExtendedMode = false
-            extendedBits = []
-        }
-    }
-
-    // MARK: - Hand Animation
-
-    private func moveHands(to position: Int) {
-        // 시침 + 분침 이동 (BLE 특성이 withoutResponse 미지원 → withResponse 사용)
-        bleManager?.sendCommand(name: "stepper_goto", value: [0, position])
-        bleManager?.sendCommand(name: "stepper_goto", value: [1, position])
-    }
-
-    private func animateHands(to target: Int, completion: @escaping () -> Void) {
-        // 1분부터 째깍째깍 target까지 (position 0은 stepper에서 무시됨)
-        var currentStep = 1
-
-        func nextStep() {
-            if currentStep > target {
-                // 최종 위치에서 3초 유지 후 recalibrate 종료 → datetime 복귀
-                DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
-                    self?.exitRecalibrateAndSyncTime()
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                        completion()
-                    }
-                }
-                return
-            }
-
-            moveHands(to: currentStep)
-            currentStep += 1
-
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                nextStep()
-            }
-        }
-
-        // 55분(11시)에서 1분으로 이동하는 물리적 시간 확보 후 째깍 시작
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-            nextStep()
         }
     }
 
