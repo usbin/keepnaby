@@ -94,6 +94,25 @@ struct NotificationMappingView: View {
                         ble.sendCommand(name: "alert_assign", value: [1: 3] as [Int: Int])
                         ble.log("alert_assign({1: 3})")
                     }
+                    Text("ancs_filter idx 테스트:")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    ForEach([1, 2, 3, 5, 7, 10], id: \.self) { idx in
+                        Button("idx=\(idx), 전체알림, vib=2") {
+                            // 먼저 삭제
+                            for i in 0...12 {
+                                ble.sendCommand(name: "ancs_filter", value: [i])
+                            }
+                            // 1.5초 후 설정
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                                ble.sendCommand(name: "ancs_filter", value: [
+                                    idx, AncsCategory.allBitmask, 255, "", 2
+                                ] as [Any])
+                                ble.log("ancs_filter[\(idx)]: all, vib=2")
+                            }
+                        }
+                        .font(.caption)
+                    }
                 }
             }
             .navigationTitle("알림 매핑")
