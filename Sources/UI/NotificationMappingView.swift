@@ -96,7 +96,19 @@ struct NotificationMappingView: View {
                     }
                     Button("config_base([10,1,1,1]) 전송") {
                         ble.sendCommand(name: "config_base", value: [10, 1, 1, 1])
-                        ble.log("config_base([10, 1, 1, 1]) — 공식 앱 동일")
+                        ble.log("config_base([10, 1, 1, 1])")
+                    }
+                    .font(.caption)
+                    ForEach([1, 2, 3], id: \.self) { val in
+                        Button("alert(\(val)) → 바늘 테스트") {
+                            ble.sendCommand(name: "alert", value: val)
+                            ble.log("alert(\(val))")
+                        }
+                        .font(.caption)
+                    }
+                    Button("alert_assign Array [0,0,0] 전송") {
+                        ble.sendCommand(name: "alert_assign", value: [0, 0, 0])
+                        ble.log("alert_assign([0, 0, 0]) Array")
                     }
                     .font(.caption)
                     Button("공식 앱 설정 전체 읽기") {
