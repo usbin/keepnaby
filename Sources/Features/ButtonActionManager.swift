@@ -181,50 +181,110 @@ final class ButtonActionManager: ObservableObject {
     private func cancelExtendedMode() {
         isExtendedMode = false
         extendedBits = []
-        // 진동 3회 — 취소 알림
+        // 진동 3회 — 취소
         bleManager?.sendCommand(name: "vibrator_start", value: [150, 100, 150, 100, 150])
+        // datetime으로 바늘 즉시 복귀
+        sendCurrentDatetime()
         bleManager?.log("확장입력모드 취소")
     }
 
     private func startExtendedMode() {
         isExtendedMode = true
         extendedBits = []
-        // 진동 1회 — 입력 모드 시작 알림
+        // 진동 1회
         bleManager?.sendCommand(name: "vibrator_start", value: [150])
-        bleManager?.log("확장입력모드 시작")
+        // 시침+분침 → 55분 위치 (11시 방향)
+        moveHands(to: 55)
+        bleManager?.log("확장입력모드 시작 → 11시")
     }
 
     private func handleExtendedInput(event: Int) {
-        // 1회 클릭 = 0, 2회 클릭 = 1
         let bit: Int
         switch event {
         case 1: bit = 0
         case 3: bit = 1
-        default: return  // 다른 이벤트 무시
+        default: return
         }
 
         extendedBits.append(bit)
         bleManager?.log("확장입력: bit \(extendedBits.count)/4 = \(bit)")
 
         if extendedBits.count >= 4 {
-            // 4비트 완성 → 10진 변환
             let value = extendedBits[0] * 8 + extendedBits[1] * 4 + extendedBits[2] * 2 + extendedBits[3]
-            // 진동 2회 — 입력 완료 알림
+            // 진동 2회
             bleManager?.sendCommand(name: "vibrator_start", value: [150, 100, 150])
             bleManager?.log("확장입력 완료: \(extendedBits) = \(value)")
 
-            // 명령 실행
-            if value < extendedMappings.count {
-                let action = extendedMappings[value]
-                if action.type != .none {
-                    executeAction(action)
-                    bleManager?.log("확장입력 실행: [\(value)] \(action.type.displayName)")
+            // 바늘 애니메이션: 0분부터 1분씩 이동 → 최종 위치
+            animateHands(to: value) { [weak self] in
+                guard let self else { return }
+                // 애니메이션 완료 후 명령 실행
+                if value < self.extendedMappings.count {
+                    let action = self.extendedMappings[value]
+                    if action.type != .none {
+                        self.executeAction(action)
+                        self.bleManager?.log("확장입력 실행: [\(value)] \(action.type.displayName)")
+                    }
                 }
             }
 
             isExtendedMode = false
             extendedBits = []
         }
+    }
+
+    // MARK: - Hand Animation
+
+    private func moveHands(to position: Int) {
+        // 시침 + 분침 동시에 이동
+        bleManager?.sendCommand(name: "stepper_goto", value: [0, position])
+        bleManager?.sendCommand(name: "stepper_goto", value: [1, position])
+    }
+
+    private func animateHands(to target: Int, completion: @escaping () -> Void) {
+        // 0분부터 1분씩 이동해서 target 위치까지
+        let steps = max(target, 1) // 최소 1스텝 (0이면 0으로 바로)
+        var currentStep = 0
+
+        func nextStep() {
+            if currentStep > target {
+                // 최종 위치에서 3초 유지 후 datetime으로 복귀
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
+                    self?.sendCurrentDatetime()
+                    completion()
+                }
+                return
+            }
+
+            moveHands(to: currentStep)
+            currentStep += 1
+
+            // 0.3초 간격으로 다음 스텝
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                nextStep()
+            }
+        }
+
+        nextStep()
+    }
+
+    private func sendCurrentDatetime() {
+        let now = Date()
+        var cal = Calendar.current
+        cal.timeZone = .current
+        let c = cal.dateComponents([.year, .month, .day, .hour, .minute, .second, .weekday], from: now)
+        let kronabyDay: Int
+        switch c.weekday! {
+        case 1: kronabyDay = 5
+        case 2: kronabyDay = 6
+        case 3: kronabyDay = 0
+        case 4: kronabyDay = 1
+        case 5: kronabyDay = 2
+        case 6: kronabyDay = 3
+        case 7: kronabyDay = 4
+        default: kronabyDay = 0
+        }
+        bleManager?.sendCommand(name: "datetime", value: [c.year!, c.month!, c.day!, c.hour!, c.minute!, c.second!, kronabyDay])
     }
 
     // MARK: - IFTTT
