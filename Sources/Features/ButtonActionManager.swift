@@ -253,16 +253,15 @@ final class ButtonActionManager: ObservableObject {
     }
 
     private func animateHands(to target: Int, completion: @escaping () -> Void) {
-        // 0분부터 1분씩 이동해서 target 위치까지
-        let steps = max(target, 1) // 최소 1스텝 (0이면 0으로 바로)
-        var currentStep = 0
+        // 0분 위치로 먼저 이동 후, 1분씩 째깍째깍 target까지
+        moveHands(to: 0)
+        var currentStep = 1
 
         func nextStep() {
             if currentStep > target {
                 // 최종 위치에서 3초 유지 후 recalibrate 종료 → datetime 복귀
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
                     self?.exitRecalibrateAndSyncTime()
-                    // datetime 전송 후 completion 호출
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                         completion()
                     }
@@ -273,13 +272,15 @@ final class ButtonActionManager: ObservableObject {
             moveHands(to: currentStep)
             currentStep += 1
 
-            // 0.3초 간격으로 다음 스텝
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 nextStep()
             }
         }
 
-        nextStep()
+        // 0분 도착 후 0.5초 대기 → 째깍 시작
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            nextStep()
+        }
     }
 
     private func sendCurrentDatetime() {
