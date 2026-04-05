@@ -37,6 +37,10 @@ struct KeepnabyApp: App {
                             ble.sendCommand(name: "complications", value: [5, crownMode, 18])
                             ble.log("재전송: complications([5, \(crownMode), 18])")
 
+                            // 2.5. settings — 공식 앱이 초기 설정 시 전송 (BLE 캡처에서 발견)
+                            ble.sendCommand(name: "settings", value: [154: true, 176: 1, 178: 70, 174: false, 160: 1100] as [Int: Any])
+                            ble.log("재전송: settings")
+
                             // 3. 걸음수 목표
                             let stepGoal = UserDefaults.standard.integer(forKey: "kronaby_step_goal_v2")
                             if stepGoal > 0 {

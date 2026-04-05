@@ -120,7 +120,13 @@ final class NotificationMappingManager: ObservableObject {
 
         // 1. alert_assign — Array 형식 [pos1, pos2, pos3]
         // 0 = 비활성, 1 = 활성 (ANCS 또는 alarm)
+        // 공식 앱은 활성 슬롯에 1을 설정 (BLE 캡처에서 확인)
         var assignArray = [0, 0, 0]
+        for slot in slots where slot.enabled && !slot.categories.isEmpty {
+            if slot.id >= 1 && slot.id <= 3 {
+                assignArray[slot.id - 1] = 1
+            }
+        }
         let alarmSlot = UserDefaults.standard.integer(forKey: "kronaby_alarm_slot")
         if alarmSlot >= 1 && alarmSlot <= 3 {
             assignArray[alarmSlot - 1] = 1
