@@ -130,7 +130,7 @@ extension ButtonKey: Identifiable {
     var id: String { storageKey }
 }
 
-extension Int: Identifiable {
+extension Int: @retroactive Identifiable {
     public var id: Int { self }
 }
 
