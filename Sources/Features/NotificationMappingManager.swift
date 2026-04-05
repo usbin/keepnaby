@@ -111,28 +111,24 @@ final class NotificationMappingManager: ObservableObject {
     func applyToWatch(ble: BLEManager) {
         var delay: Double = 0
 
-        // 1. 기존 필터 삭제 (인덱스 0~5)
-        for i in 0...5 {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                ble.sendCommand(name: "ancs_filter", value: [i])
-            }
-            delay += 0.1
-        }
-        ble.log("필터 삭제 (0~5)")
-
-        delay += 0.3
-
-        // 2. 카테고리 슬롯 (인덱스 1~3)
-        for slot in slots where slot.enabled && !slot.categories.isEmpty {
+        // 카테고리 슬롯 (인덱스 1~3) — 삭제 없이 바로 설정
+        for slot in slots {
             let idx = slot.id
-            let bitmask = slot.combinedBitmask
-            let vib = slot.id
-
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                ble.sendCommand(name: "ancs_filter", value: [
-                    idx, bitmask, 255, "", vib
-                ] as [Any])
-                ble.log("카테고리[\(idx)]: bitmask=\(bitmask), vib=\(vib)")
+            if slot.enabled && !slot.categories.isEmpty {
+                let bitmask = slot.combinedBitmask
+                let vib = slot.id
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                    ble.sendCommand(name: "ancs_filter", value: [
+                        idx, bitmask, 255, "", vib
+                    ] as [Any])
+                    ble.log("카테고리[\(idx)]: bitmask=\(bitmask), vib=\(vib)")
+                }
+            } else {
+                // 비활성 슬롯은 삭제
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                    ble.sendCommand(name: "ancs_filter", value: [idx])
+                    ble.log("카테고리[\(idx)]: 삭제")
+                }
             }
             delay += 0.3
         }

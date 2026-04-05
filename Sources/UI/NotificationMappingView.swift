@@ -62,6 +62,39 @@ struct NotificationMappingView: View {
                             .frame(maxWidth: .infinity)
                     }
                 }
+                Section("디버그") {
+                    Button("alert_assign 읽기") {
+                        if let cmdId = ble.commandMap["alert_assign"] {
+                            for batch in 0...2 {
+                                let delay = Double(batch) * 2.0
+                                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                                    let data = KronabyProtocol().encodeArray([cmdId, batch])
+                                    if let c = ble.commandChar {
+                                        ble.peripheral?.writeValue(data, for: c, type: .withResponse)
+                                        ble.log("alert_assign read[\(batch)]")
+                                    }
+                                }
+                                DispatchQueue.main.asyncAfter(deadline: .now() + delay + 1.0) {
+                                    if let p = ble.peripheral, let c = ble.commandChar {
+                                        p.readValue(for: c)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Button("alert_assign {1:0} 전송") {
+                        ble.sendCommand(name: "alert_assign", value: [1: 0] as [Int: Int])
+                        ble.log("alert_assign({1: 0})")
+                    }
+                    Button("alert_assign {1:2} 전송") {
+                        ble.sendCommand(name: "alert_assign", value: [1: 2] as [Int: Int])
+                        ble.log("alert_assign({1: 2})")
+                    }
+                    Button("alert_assign {1:3} 전송") {
+                        ble.sendCommand(name: "alert_assign", value: [1: 3] as [Int: Int])
+                        ble.log("alert_assign({1: 3})")
+                    }
+                }
             }
             .navigationTitle("알림 매핑")
             .navigationBarTitleDisplayMode(.inline)
