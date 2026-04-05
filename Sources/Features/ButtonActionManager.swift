@@ -259,9 +259,9 @@ final class ButtonActionManager: ObservableObject {
     // MARK: - Hand Animation
 
     private func moveHands(to position: Int) {
-        // 시침 + 분침 동시에 이동 — withoutResponse로 ACK 대기 없이 연속 전송
-        bleManager?.sendCommandFast(name: "stepper_goto", value: [0, position])
-        bleManager?.sendCommandFast(name: "stepper_goto", value: [1, position])
+        // 시침 + 분침 이동 (BLE 특성이 withoutResponse 미지원 → withResponse 사용)
+        bleManager?.sendCommand(name: "stepper_goto", value: [0, position])
+        bleManager?.sendCommand(name: "stepper_goto", value: [1, position])
     }
 
     private func animateHands(to target: Int, completion: @escaping () -> Void) {
