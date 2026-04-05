@@ -111,6 +111,24 @@ struct NotificationMappingView: View {
                         ble.log("alert_assign([0, 0, 0]) Array")
                     }
                     .font(.caption)
+                    Text("remote_data 테스트:")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Button("remote_data [10, 0, 1]") {
+                        ble.sendCommand(name: "remote_data", value: [10, 0, 1])
+                        ble.log("remote_data([10, 0, 1]) — 1분 위치")
+                    }
+                    .font(.caption)
+                    Button("remote_data [10, 0, 2]") {
+                        ble.sendCommand(name: "remote_data", value: [10, 0, 2])
+                        ble.log("remote_data([10, 0, 2]) — 2분 위치")
+                    }
+                    .font(.caption)
+                    Button("remote_data [10, 0, 3]") {
+                        ble.sendCommand(name: "remote_data", value: [10, 0, 3])
+                        ble.log("remote_data([10, 0, 3]) — 3분 위치")
+                    }
+                    .font(.caption)
                     Button("74개 명령 전체 덤프") {
                         let sorted = ble.commandMap.sorted(by: { $0.value < $1.value })
                         var delay: Double = 0
