@@ -32,6 +32,7 @@ final class BLEManager: NSObject, ObservableObject {
     private var lastReadHex = ""
     private var readRetryCount = 0
     private var keepAliveTimer: Timer?
+    private var forceReconnectTimer: Timer?
     var onKeepAlive: (() -> Void)?
 
     private static let savedPeripheralKey = "kronaby_peripheral_uuid"
@@ -144,10 +145,10 @@ final class BLEManager: NSObject, ObservableObject {
 
     private func startKeepAliveTimer() {
         stopKeepAliveTimer()
-        // 10분마다 ANCS 설정 재전송 + notify 구독 재확인
+        // 10분마다 ANCS 리셋 사이클 + notify 구독 재확인
         keepAliveTimer = Timer.scheduledTimer(withTimeInterval: 600, repeats: true) { [weak self] _ in
             guard let self, self.connectionState == .connected else { return }
-            self.log("keepAlive — ANCS 재설정 + notify 재구독")
+            self.log("keepAlive — ANCS 리셋 사이클 + notify 재구독")
             // notify 특성 구독 재확인
             if let p = self.peripheral {
                 if let cmd = self.commandChar {
@@ -159,11 +160,26 @@ final class BLEManager: NSObject, ObservableObject {
             }
             self.onKeepAlive?()
         }
+
+        // 6시간마다 BLE 강제 재연결 — iOS ANCS 보안 세션 만료 대응
+        // 시계가 iOS ANCS GATT 구독을 완전히 새로 수립하도록 강제
+        forceReconnectTimer = Timer.scheduledTimer(withTimeInterval: 6 * 3600, repeats: true) { [weak self] _ in
+            guard let self, self.connectionState == .connected,
+                  let peripheral = self.peripheral else { return }
+            self.log("6시간 주기 강제 재연결 — ANCS 세션 갱신")
+            // intentionalDisconnect를 false로 유지 → 자동 재연결 트리거
+            self.commandChar = nil
+            self.notifyChar = nil
+            self.stopKeepAliveTimer()
+            self.centralManager.cancelPeripheralConnection(peripheral)
+        }
     }
 
     private func stopKeepAliveTimer() {
         keepAliveTimer?.invalidate()
         keepAliveTimer = nil
+        forceReconnectTimer?.invalidate()
+        forceReconnectTimer = nil
     }
 
     func forgetDevice() {
