@@ -195,7 +195,9 @@ final class BLEManager: NSObject, ObservableObject {
         sendCommand(name: "steps_now", value: 0)
     }
 
-    func sendCommand(name: String, value: Any) {
+    private var writeCompletionHandler: (() -> Void)?
+
+    func sendCommand(name: String, value: Any, onComplete: (() -> Void)? = nil) {
         guard let char = commandChar,
               let cmdId = commandMap[name] else {
             log("sendCommand 실패: \(name) (char=\(commandChar != nil), map=\(commandMap[name] as Any))")
@@ -204,6 +206,7 @@ final class BLEManager: NSObject, ObservableObject {
         let data = protocol_.encode(commandId: cmdId, value: value)
         let hex = data.map { String(format: "%02X", $0) }.joined()
         log("CMD: \(name)(\(cmdId)) → \(hex)")
+        if onComplete != nil { writeCompletionHandler = onComplete }
         peripheral?.writeValue(data, for: char, type: .withResponse)
     }
 
@@ -460,6 +463,11 @@ extension BLEManager: CBPeripheralDelegate {
                     p.readValue(for: c)
                     self.log("map_cmd(\(self.handshakeStep)) read 요청")
                 }
+            }
+            // 쓰기 완료 콜백
+            if let handler = writeCompletionHandler {
+                writeCompletionHandler = nil
+                DispatchQueue.main.async { handler() }
             }
         }
     }
