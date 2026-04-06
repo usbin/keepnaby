@@ -217,6 +217,9 @@ func actionPicker(selection: Binding<ButtonAction>) -> some View {
         Text("없음").tag(ButtonActionType.none)
         Section("기본") {
             Text("폰 찾기").tag(ButtonActionType.findPhone)
+            Text("오늘 날짜 확인").tag(ButtonActionType.showDate)
+            Text("배터리 잔량 표시").tag(ButtonActionType.showBattery)
+            Text("걸음수 확인").tag(ButtonActionType.showSteps)
         }
         Section("음악") {
             Text("재생/일시정지").tag(ButtonActionType.musicPlayPause)
