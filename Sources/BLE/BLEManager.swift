@@ -167,11 +167,18 @@ final class BLEManager: NSObject, ObservableObject {
             guard let self, self.connectionState == .connected,
                   let peripheral = self.peripheral else { return }
             self.log("6시간 주기 강제 재연결 — ANCS 세션 갱신")
-            // intentionalDisconnect를 false로 유지 → 자동 재연결 트리거
-            self.commandChar = nil
-            self.notifyChar = nil
-            self.stopKeepAliveTimer()
-            self.centralManager.cancelPeripheralConnection(peripheral)
+            // notify 구독을 명시적으로 해제 → iOS가 시계에 GATT unsubscribe 전송
+            if let cmd = self.commandChar { peripheral.setNotifyValue(false, for: cmd) }
+            if let ntf = self.notifyChar { peripheral.setNotifyValue(false, for: ntf) }
+            // unsubscribe 전송 후 대기 → disconnect
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                guard let self, let peripheral = self.peripheral else { return }
+                // intentionalDisconnect를 false로 유지 → 자동 재연결 트리거
+                self.commandChar = nil
+                self.notifyChar = nil
+                self.stopKeepAliveTimer()
+                self.centralManager.cancelPeripheralConnection(peripheral)
+            }
         }
     }
 

@@ -64,9 +64,15 @@ struct KeepnabyApp: App {
                         }
                     }
 
-                    bleManager.onConnected = { [weak bleManager] in
+                    bleManager.onConnected = { [weak bleManager, weak notificationMappingManager] in
                         guard let ble = bleManager else { return }
+                        // ANCS 리셋 사이클: 먼저 완전히 끈 뒤 재활성화
+                        let crownMode = UserDefaults.standard.integer(forKey: "kronaby_crown_mode")
+                        ble.sendCommand(name: "complications", value: [5, crownMode, 0])
+                        ble.sendCommand(name: "alert_assign", value: [0, 0, 0])
+                        ble.log("재연결 ANCS 리셋: 비활성화")
                         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                            guard let ble = bleManager, ble.connectionState == .connected else { return }
                             sendAllConfig(ble)
                         }
                     }
