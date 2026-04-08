@@ -31,9 +31,8 @@ final class BLEManager: NSObject, ObservableObject {
     private var handshakeResponseCount = 0
     private var lastReadHex = ""
     private var readRetryCount = 0
+    private var serviceDiscoveryRetryCount = 0
     private var keepAliveTimer: Timer?
-    private var forceReconnectTimer: Timer?
-    var onKeepAlive: (() -> Void)?
 
     private static let savedPeripheralKey = "kronaby_peripheral_uuid"
     private static let savedCommandMapKey = "kronaby_command_map"
@@ -145,39 +144,16 @@ final class BLEManager: NSObject, ObservableObject {
 
     private func startKeepAliveTimer() {
         stopKeepAliveTimer()
-        // 10분마다 ANCS 리셋 사이클 + notify 구독 재확인
+        // 10분마다 notify 구독 재확인만 수행
+        // ANCS 명령(complications, ancs_filter)은 재전송하지 않음
+        // — 공식 앱은 설정을 한 번만 보내고 건드리지 않으며, 반복 재전송이
+        //   오히려 펌웨어의 ANCS 상태를 불안정하게 만들 수 있음
         keepAliveTimer = Timer.scheduledTimer(withTimeInterval: 600, repeats: true) { [weak self] _ in
             guard let self, self.connectionState == .connected else { return }
-            self.log("keepAlive — ANCS 리셋 사이클 + notify 재구독")
-            // notify 특성 구독 재확인
+            self.log("keepAlive — notify 재구독")
             if let p = self.peripheral {
-                if let cmd = self.commandChar {
-                    p.setNotifyValue(true, for: cmd)
-                }
-                if let ntf = self.notifyChar {
-                    p.setNotifyValue(true, for: ntf)
-                }
-            }
-            self.onKeepAlive?()
-        }
-
-        // 6시간마다 BLE 강제 재연결 — iOS ANCS 보안 세션 만료 대응
-        // 시계가 iOS ANCS GATT 구독을 완전히 새로 수립하도록 강제
-        forceReconnectTimer = Timer.scheduledTimer(withTimeInterval: 6 * 3600, repeats: true) { [weak self] _ in
-            guard let self, self.connectionState == .connected,
-                  let peripheral = self.peripheral else { return }
-            self.log("6시간 주기 강제 재연결 — ANCS 세션 갱신")
-            // notify 구독을 명시적으로 해제 → iOS가 시계에 GATT unsubscribe 전송
-            if let cmd = self.commandChar { peripheral.setNotifyValue(false, for: cmd) }
-            if let ntf = self.notifyChar { peripheral.setNotifyValue(false, for: ntf) }
-            // unsubscribe 전송 후 대기 → disconnect
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-                guard let self, let peripheral = self.peripheral else { return }
-                // intentionalDisconnect를 false로 유지 → 자동 재연결 트리거
-                self.commandChar = nil
-                self.notifyChar = nil
-                self.stopKeepAliveTimer()
-                self.centralManager.cancelPeripheralConnection(peripheral)
+                if let cmd = self.commandChar { p.setNotifyValue(true, for: cmd) }
+                if let ntf = self.notifyChar { p.setNotifyValue(true, for: ntf) }
             }
         }
     }
@@ -185,8 +161,6 @@ final class BLEManager: NSObject, ObservableObject {
     private func stopKeepAliveTimer() {
         keepAliveTimer?.invalidate()
         keepAliveTimer = nil
-        forceReconnectTimer?.invalidate()
-        forceReconnectTimer = nil
     }
 
     func forgetDevice() {
@@ -378,6 +352,7 @@ extension BLEManager: CBCentralManagerDelegate {
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
         log("BLE 연결됨 — 서비스 검색 시작")
+        serviceDiscoveryRetryCount = 0
         savePeripheralID(peripheral.identifier)
         peripheral.discoverServices(nil)
     }
@@ -415,15 +390,33 @@ extension BLEManager: CBPeripheralDelegate {
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
         if let error = error {
             log("서비스 검색 에러: \(error.localizedDescription)")
+            retryServiceDiscovery(peripheral)
             return
         }
-        guard let services = peripheral.services else {
+        guard let services = peripheral.services, !services.isEmpty else {
             log("서비스 없음")
+            retryServiceDiscovery(peripheral)
             return
         }
+        serviceDiscoveryRetryCount = 0
         log("서비스 발견: \(services.map { $0.uuid.uuidString })")
         for service in services {
             peripheral.discoverCharacteristics(nil, for: service)
+        }
+    }
+
+    /// 서비스 검색 실패 시 재시도 (최대 3회, 2초 간격)
+    private func retryServiceDiscovery(_ peripheral: CBPeripheral) {
+        serviceDiscoveryRetryCount += 1
+        guard serviceDiscoveryRetryCount <= 3 else {
+            log("서비스 검색 재시도 \(serviceDiscoveryRetryCount - 1)회 실패 — 포기")
+            serviceDiscoveryRetryCount = 0
+            return
+        }
+        log("서비스 검색 재시도 \(serviceDiscoveryRetryCount)/3 — 2초 후")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+            guard let self, peripheral.state == .connected else { return }
+            peripheral.discoverServices(nil)
         }
     }
 
@@ -471,6 +464,14 @@ extension BLEManager: CBPeripheralDelegate {
                 performHandshake()
             }
         }
+    }
+
+    func peripheral(_ peripheral: CBPeripheral, didModifyServices invalidatedServices: [CBService]) {
+        log("서비스 변경 감지: \(invalidatedServices.map { $0.uuid.uuidString })")
+        // GATT 테이블이 변경되면 특성이 무효화됨 — 서비스 재검색
+        commandChar = nil
+        notifyChar = nil
+        peripheral.discoverServices(nil)
     }
 
     func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
