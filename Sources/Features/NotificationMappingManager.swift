@@ -135,14 +135,14 @@ final class NotificationMappingManager: ObservableObject {
         ble.log("alert_assign(\(assignArray))")
         delay += 0.5
 
-        // 2. 기존 필터 삭제 (0~12)
-        for i in 0...12 {
+        // 2. 기존 필터 삭제 (0~34) — 공식 앱은 35개 슬롯 전체를 관리
+        for i in 0...34 {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
                 ble.sendCommand(name: "ancs_filter", value: [i])
             }
             delay += 0.1
         }
-        ble.log("필터 삭제 (0~12)")
+        ble.log("필터 삭제 (0~34)")
 
         // 3. 활성 슬롯 전송
         delay += 0.5

@@ -129,6 +129,9 @@ final class BLEManager: NSObject, ObservableObject {
 
     private var intentionalDisconnect = false
     var onConnected: (() -> Void)?
+    var onPeriodicSync: (() -> Void)?
+    private var periodicSyncTimer: Timer?
+    private static let periodicSyncInterval: TimeInterval = 3600 // 1시간 (공식 앱과 동일)
 
     func disconnect() {
         intentionalDisconnect = true
@@ -153,6 +156,23 @@ final class BLEManager: NSObject, ObservableObject {
         content.sound = .default
         let request = UNNotificationRequest(identifier: "ble_disconnect", content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request)
+    }
+
+    // MARK: - Periodic Sync (공식 앱: 1시간마다 전체 설정 재전송)
+
+    private func startPeriodicSync() {
+        stopPeriodicSync()
+        periodicSyncTimer = Timer.scheduledTimer(withTimeInterval: Self.periodicSyncInterval, repeats: true) { [weak self] _ in
+            guard let self, self.connectionState == .connected else { return }
+            self.log("주기적 sync 실행 (1시간)")
+            self.onPeriodicSync?()
+        }
+        log("주기적 sync 타이머 시작 (1시간 간격)")
+    }
+
+    private func stopPeriodicSync() {
+        periodicSyncTimer?.invalidate()
+        periodicSyncTimer = nil
     }
 
     func requestBattery() {
@@ -250,6 +270,7 @@ final class BLEManager: NSObject, ObservableObject {
                 self?.sendCommand(name: "config_base", value: [1, 1])
             }
             self.log("연결됨! 영점 조정 → 시각 설정 순서로 진행하세요.")
+            self.startPeriodicSync()
             self.onConnected?()
         }
     }
@@ -340,6 +361,7 @@ extension BLEManager: CBCentralManagerDelegate {
         log("연결 끊김: \(error?.localizedDescription ?? "정상")")
         commandChar = nil
         notifyChar = nil
+        stopPeriodicSync()
 
         if !intentionalDisconnect, loadSavedCommandMap() != nil {
             // 의도치 않은 끊김 → 자동 재연결 + 알림
@@ -430,6 +452,7 @@ extension BLEManager: CBPeripheralDelegate {
                         self?.sendCommand(name: "config_base", value: [1, 1])
                     }
                     self.log("재연결 완료!")
+                    self.startPeriodicSync()
                     self.onConnected?()
                 }
             } else {

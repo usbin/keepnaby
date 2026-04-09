@@ -60,6 +60,12 @@ struct KeepnabyApp: App {
                         sendAllConfig(ble)
                     }
 
+                    // 1시간 주기 전체 설정 재전송 (공식 앱과 동일)
+                    bleManager.onPeriodicSync = { [weak bleManager] in
+                        guard let ble = bleManager else { return }
+                        sendAllConfig(ble)
+                    }
+
                     // State Restoration으로 이미 연결 완료된 경우 — onConnected가 nil일 때 놓친 설정 보상
                     if bleManager.connectionState == .connected {
                         bleManager.log("onAppear: 이미 연결됨 — 설정 재전송")

@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -v \"^E:/Others/P_kronaby/kronaby_decompiled/sources$\")",
+      "Bash(find:*)"
+    ]
+  }
+}
