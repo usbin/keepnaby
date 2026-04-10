@@ -159,20 +159,46 @@ final class BLEManager: NSObject, ObservableObject {
     }
 
     // MARK: - Periodic Sync (공식 앱: 1시간마다 전체 설정 재전송)
+    // Timer는 백그라운드에서 동작하지 않으므로 BGAppRefreshTask와 병행
 
     private func startPeriodicSync() {
         stopPeriodicSync()
         periodicSyncTimer = Timer.scheduledTimer(withTimeInterval: Self.periodicSyncInterval, repeats: true) { [weak self] _ in
             guard let self, self.connectionState == .connected else { return }
-            self.log("주기적 sync 실행 (1시간)")
+            self.log("주기적 sync 실행 (Timer, 1시간)")
             self.onPeriodicSync?()
         }
         log("주기적 sync 타이머 시작 (1시간 간격)")
+        // BGAppRefreshTask 스케줄 (백그라운드에서도 sync 실행)
+        BackgroundSyncScheduler.shared.scheduleAppRefresh()
     }
 
     private func stopPeriodicSync() {
         periodicSyncTimer?.invalidate()
         periodicSyncTimer = nil
+    }
+
+    /// 백그라운드에서 깨어났을 때 호출 — GATT keepalive + 전체 sync
+    func performBackgroundSync() {
+        guard connectionState == .connected else {
+            log("백그라운드 sync 스킵 — 미연결")
+            return
+        }
+        log("백그라운드 sync 실행 (BGAppRefreshTask)")
+        // 1. 중립적 GATT 활동으로 iOS에 연결 활성 신호
+        sendCommand(name: "vbat", value: 0)
+        // 2. 전체 설정 재전송
+        onPeriodicSync?()
+        // 다음 BGTask 스케줄
+        BackgroundSyncScheduler.shared.scheduleAppRefresh()
+    }
+
+    /// periodic 명령 (cmd 38) 탐색용 — 시계에 주기적 heartbeat 설정 시도
+    func tryPeriodicCommand() {
+        guard connectionState == .connected, commandMap["periodic"] != nil else { return }
+        // 1시간(3600초) 간격으로 시계가 주기적 데이터를 보내도록 시도
+        sendCommand(name: "periodic", value: 3600)
+        log("periodic(3600) 전송 — 시계 응답 관찰 필요")
     }
 
     func requestBattery() {
@@ -458,6 +484,14 @@ extension BLEManager: CBPeripheralDelegate {
             } else {
                 performHandshake()
             }
+        }
+    }
+
+    func peripheral(_ peripheral: CBPeripheral, didUpdateNotificationStateFor characteristic: CBCharacteristic, error: Error?) {
+        log("Notify 상태 변경 [\(characteristic.uuid)]: isNotifying=\(characteristic.isNotifying), error=\(error?.localizedDescription ?? "없음")")
+        if !characteristic.isNotifying && error == nil {
+            log("⚠️ Notify 구독 해제됨 — 재구독 시도")
+            peripheral.setNotifyValue(true, for: characteristic)
         }
     }
 

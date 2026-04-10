@@ -58,6 +58,10 @@ struct KeepnabyApp: App {
                     bleManager.onConnected = { [weak bleManager] in
                         guard let ble = bleManager else { return }
                         sendAllConfig(ble)
+                        // periodic (cmd 38) 탐색 — 시계가 주기적 데이터를 보내게 하는 명령인지 확인
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                            ble.tryPeriodicCommand()
+                        }
                     }
 
                     // 1시간 주기 전체 설정 재전송 (공식 앱과 동일)
@@ -75,6 +79,15 @@ struct KeepnabyApp: App {
                         }
                     }
 
+                    // 백그라운드 sync 알림 수신 → BLE keepalive 실행
+                    NotificationCenter.default.addObserver(
+                        forName: .backgroundSyncRequested,
+                        object: nil,
+                        queue: .main
+                    ) { [weak bleManager] _ in
+                        bleManager?.performBackgroundSync()
+                    }
+
                     UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
                 }
                 .onReceive(bleManager.$lastButtonEvent) { event in
@@ -90,6 +103,11 @@ struct KeepnabyApp: App {
 // MARK: - AppDelegate (앱 종료 감지)
 
 class AppDelegate: NSObject, UIApplicationDelegate {
+    func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        BackgroundSyncScheduler.shared.registerTask()
+        return true
+    }
+
     func applicationWillTerminate(_ application: UIApplication) {
         // 앱 종료 시 로컬 알림 예약
         let content = UNMutableNotificationContent()
