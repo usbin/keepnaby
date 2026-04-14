@@ -3,7 +3,10 @@
     "allow": [
       "Bash(grep -v \"^E:/Others/P_kronaby/kronaby_decompiled/sources$\")",
       "Bash(find:*)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(git log:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)"
     ]
   }
 }
