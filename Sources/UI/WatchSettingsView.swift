@@ -22,11 +22,6 @@ struct WatchSettingsView: View {
 
     @State private var topTrigger: TriggerValue = .none
     @State private var bottomTrigger: TriggerValue = .none
-    @State private var dndEnabled = false
-    @State private var dndStartHour = 22
-    @State private var dndStartMin = 0
-    @State private var dndEndHour = 7
-    @State private var dndEndMin = 0
     @State private var worldTimeHour = 0
     @State private var worldTimeMin = 0
     @State private var vibStrength: Int = 0
@@ -34,11 +29,6 @@ struct WatchSettingsView: View {
 
     private static let triggerTopKey = "kronaby_trigger_top"
     private static let triggerBottomKey = "kronaby_trigger_bottom"
-    private static let dndEnabledKey = "kronaby_dnd_enabled"
-    private static let dndStartHKey = "kronaby_dnd_start_h"
-    private static let dndStartMKey = "kronaby_dnd_start_m"
-    private static let dndEndHKey = "kronaby_dnd_end_h"
-    private static let dndEndMKey = "kronaby_dnd_end_m"
     private static let worldTimeHKey = "kronaby_wt_hour"
     private static let worldTimeMKey = "kronaby_wt_min"
     private static let vibStrengthKey = "kronaby_vib_strength"
@@ -64,45 +54,6 @@ struct WatchSettingsView: View {
                     Text("버튼 매핑의 앱 액션과 별개로 작동합니다.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                }
-
-                // MARK: - 방해금지
-                Section("방해금지 (DND)") {
-                    Toggle("활성화", isOn: $dndEnabled)
-
-                    if dndEnabled {
-                        HStack {
-                            Text("시작")
-                            Spacer()
-                            Picker("시", selection: $dndStartHour) {
-                                ForEach(0..<24, id: \.self) { Text("\($0)시") }
-                            }.pickerStyle(.menu)
-                            Picker("분", selection: $dndStartMin) {
-                                ForEach([0, 15, 30, 45], id: \.self) { Text(String(format: "%02d분", $0)) }
-                            }.pickerStyle(.menu)
-                        }
-                        HStack {
-                            Text("종료")
-                            Spacer()
-                            Picker("시", selection: $dndEndHour) {
-                                ForEach(0..<24, id: \.self) { Text("\($0)시") }
-                            }.pickerStyle(.menu)
-                            Picker("분", selection: $dndEndMin) {
-                                ForEach([0, 15, 30, 45], id: \.self) { Text(String(format: "%02d분", $0)) }
-                            }.pickerStyle(.menu)
-                        }
-                    }
-                    applyButton(id: "dnd") {
-                        ble.sendCommand(name: "dnd", value: [
-                            dndEnabled ? 1 : 0, dndStartHour, dndStartMin, dndEndHour, dndEndMin
-                        ])
-                        save(Self.dndEnabledKey, dndEnabled)
-                        save(Self.dndStartHKey, dndStartHour)
-                        save(Self.dndStartMKey, dndStartMin)
-                        save(Self.dndEndHKey, dndEndHour)
-                        save(Self.dndEndMKey, dndEndMin)
-                        ble.log("DND: \(dndEnabled ? "ON" : "OFF") \(dndStartHour):\(String(format: "%02d", dndStartMin))~\(dndEndHour):\(String(format: "%02d", dndEndMin))")
-                    }
                 }
 
                 // MARK: - 세계시간
@@ -322,11 +273,6 @@ struct WatchSettingsView: View {
     private func loadSettings() {
         topTrigger = TriggerValue(rawValue: UserDefaults.standard.integer(forKey: Self.triggerTopKey)) ?? .none
         bottomTrigger = TriggerValue(rawValue: UserDefaults.standard.integer(forKey: Self.triggerBottomKey)) ?? .none
-        dndEnabled = UserDefaults.standard.bool(forKey: Self.dndEnabledKey)
-        dndStartHour = UserDefaults.standard.object(forKey: Self.dndStartHKey) as? Int ?? 22
-        dndStartMin = UserDefaults.standard.integer(forKey: Self.dndStartMKey)
-        dndEndHour = UserDefaults.standard.object(forKey: Self.dndEndHKey) as? Int ?? 7
-        dndEndMin = UserDefaults.standard.integer(forKey: Self.dndEndMKey)
         worldTimeHour = UserDefaults.standard.integer(forKey: Self.worldTimeHKey)
         worldTimeMin = UserDefaults.standard.integer(forKey: Self.worldTimeMKey)
         vibStrength = UserDefaults.standard.integer(forKey: Self.vibStrengthKey)

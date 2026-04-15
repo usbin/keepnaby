@@ -62,11 +62,18 @@ jobs:
           path: Keepnaby.ipa
           retention-days: 30
 
+      - name: Detect user tag on this commit
+        id: user_tag
+        run: |
+          git fetch --tags --force
+          USER_TAG=$(git tag --points-at HEAD | grep -v '^build-' | head -n 1)
+          echo "tag=$USER_TAG" >> "$GITHUB_OUTPUT"
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: build-${{ github.run_number }}
-          name: Build #${{ github.run_number }}
+          tag_name: ${{ steps.user_tag.outputs.tag || format('build-{0}', github.run_number) }}
+          name: ${{ steps.user_tag.outputs.tag || format('Build #{0}', github.run_number) }}
           body: "Automated build from commit ${{ github.sha }}"
           files: Keepnaby.ipa
         env:
