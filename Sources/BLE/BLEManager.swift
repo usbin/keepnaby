@@ -19,6 +19,7 @@ final class BLEManager: NSObject, ObservableObject {
     @Published var batteryInfo: [Int]?  // [percentage, millivolts]
     @Published var stepsInfo: [Int]?   // [steps, dayOfMonth] from steps_day
     @Published var debugLog: [String] = []
+    @Published var settingsMap: [Int: String] = [:]  // map_settings 결과: {id: "name"}
 
     private var centralManager: CBCentralManager!
     private(set) var peripheral: CBPeripheral?
@@ -32,6 +33,11 @@ final class BLEManager: NSObject, ObservableObject {
     private var lastReadHex = ""
     private var readRetryCount = 0
     private var serviceDiscoveryRetryCount = 0
+
+    // map_settings 페이지 읽기 상태
+    private var isReadingSettingsMap = false
+    private var settingsMapPage = 0
+    private var pendingSettingsRead = false
 
     private static let savedPeripheralKey = "kronaby_peripheral_uuid"
     private static let savedCommandMapKey = "kronaby_command_map"
@@ -129,9 +135,6 @@ final class BLEManager: NSObject, ObservableObject {
 
     private var intentionalDisconnect = false
     var onConnected: (() -> Void)?
-    var onPeriodicSync: (() -> Void)?
-    private var periodicSyncTimer: Timer?
-    private static let periodicSyncInterval: TimeInterval = 3600 // 1시간 (공식 앱과 동일)
 
     func disconnect() {
         intentionalDisconnect = true
@@ -150,46 +153,29 @@ final class BLEManager: NSObject, ObservableObject {
     }
 
     private func sendDisconnectNotification() {
+        // 5초 후 발송 — 그 사이에 재연결되면 취소됨
         let content = UNMutableNotificationContent()
         content.title = "Keepnaby 연결 끊김"
         content.body = "시계와의 연결이 끊겼습니다. 재연결을 시도합니다."
         content.sound = .default
-        let request = UNNotificationRequest(identifier: "ble_disconnect", content: content, trigger: nil)
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 5, repeats: false)
+        let request = UNNotificationRequest(identifier: "ble_disconnect", content: content, trigger: trigger)
         UNUserNotificationCenter.current().add(request)
     }
 
-    // MARK: - Periodic Sync (공식 앱: 1시간마다 전체 설정 재전송)
-    // Timer는 백그라운드에서 동작하지 않으므로 BGAppRefreshTask와 병행
-
-    private func startPeriodicSync() {
-        stopPeriodicSync()
-        periodicSyncTimer = Timer.scheduledTimer(withTimeInterval: Self.periodicSyncInterval, repeats: true) { [weak self] _ in
-            guard let self, self.connectionState == .connected else { return }
-            self.log("주기적 sync 실행 (Timer, 1시간)")
-            self.onPeriodicSync?()
-        }
-        log("주기적 sync 타이머 시작 (1시간 간격)")
-        // BGAppRefreshTask 스케줄 (백그라운드에서도 sync 실행)
-        BackgroundSyncScheduler.shared.scheduleAppRefresh()
+    private func cancelDisconnectNotification() {
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ["ble_disconnect"])
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: ["ble_disconnect"])
     }
 
-    private func stopPeriodicSync() {
-        periodicSyncTimer?.invalidate()
-        periodicSyncTimer = nil
-    }
-
-    /// 백그라운드에서 깨어났을 때 호출 — GATT keepalive + 전체 sync
+    /// 백그라운드에서 깨어났을 때 호출 — GATT keepalive (설정 재전송 없음)
     func performBackgroundSync() {
         guard connectionState == .connected else {
             log("백그라운드 sync 스킵 — 미연결")
             return
         }
-        log("백그라운드 sync 실행 (BGAppRefreshTask)")
-        // 1. 중립적 GATT 활동으로 iOS에 연결 활성 신호
+        log("백그라운드 keepalive (vbat 조회)")
         sendCommand(name: "vbat", value: 0)
-        // 2. 전체 설정 재전송
-        onPeriodicSync?()
-        // 다음 BGTask 스케줄
         BackgroundSyncScheduler.shared.scheduleAppRefresh()
     }
 
@@ -211,6 +197,32 @@ final class BLEManager: NSObject, ObservableObject {
 
     func requestSteps() {
         sendCommand(name: "steps_now", value: 0)
+    }
+
+    /// map_settings 읽기 시작 — 시계 펌웨어의 settings 키 매핑을 조회
+    func readSettingsMap() {
+        guard connectionState == .connected else {
+            log("map_settings 읽기 실패: 연결 안 됨")
+            return
+        }
+        guard commandMap["map_settings"] != nil else {
+            log("map_settings 읽기 실패: commandMap에 map_settings 없음")
+            return
+        }
+        settingsMap.removeAll()
+        settingsMapPage = 0
+        isReadingSettingsMap = true
+        sendSettingsMapPage()
+    }
+
+    private func sendSettingsMapPage() {
+        guard let char = commandChar,
+              let cmdId = commandMap["map_settings"] else { return }
+        let data = protocol_.encode(commandId: cmdId, value: settingsMapPage)
+        let hex = data.map { String(format: "%02X", $0) }.joined()
+        log("map_settings(\(settingsMapPage)) → \(hex)")
+        pendingSettingsRead = true
+        peripheral?.writeValue(data, for: char, type: .withResponse)
     }
 
     private var writeCompletionHandler: (() -> Void)?
@@ -296,7 +308,7 @@ final class BLEManager: NSObject, ObservableObject {
                 self?.sendCommand(name: "config_base", value: [1, 1])
             }
             self.log("연결됨! 영점 조정 → 시각 설정 순서로 진행하세요.")
-            self.startPeriodicSync()
+            BackgroundSyncScheduler.shared.scheduleAppRefresh()
             self.onConnected?()
         }
     }
@@ -373,6 +385,7 @@ extension BLEManager: CBCentralManagerDelegate {
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
         log("BLE 연결됨 — 서비스 검색 시작")
+        cancelDisconnectNotification()
         serviceDiscoveryRetryCount = 0
         savePeripheralID(peripheral.identifier)
         peripheral.discoverServices(nil)
@@ -387,7 +400,7 @@ extension BLEManager: CBCentralManagerDelegate {
         log("연결 끊김: \(error?.localizedDescription ?? "정상")")
         commandChar = nil
         notifyChar = nil
-        stopPeriodicSync()
+        // BGTask는 iOS가 관리하므로 별도 정리 불필요
 
         if !intentionalDisconnect, loadSavedCommandMap() != nil {
             // 의도치 않은 끊김 → 자동 재연결 + 알림
@@ -478,7 +491,7 @@ extension BLEManager: CBPeripheralDelegate {
                         self?.sendCommand(name: "config_base", value: [1, 1])
                     }
                     self.log("재연결 완료!")
-                    self.startPeriodicSync()
+                    BackgroundSyncScheduler.shared.scheduleAppRefresh()
                     self.onConnected?()
                 }
             } else {
@@ -515,6 +528,15 @@ extension BLEManager: CBPeripheralDelegate {
                     guard let self, let p = self.peripheral, let c = self.commandChar else { return }
                     p.readValue(for: c)
                     self.log("map_cmd(\(self.handshakeStep)) read 요청")
+                }
+            }
+            // map_settings write 성공 → read로 응답 받기
+            if pendingSettingsRead && characteristic.uuid == BLEConstants.commandCharUUID {
+                pendingSettingsRead = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                    guard let self, let p = self.peripheral, let c = self.commandChar else { return }
+                    p.readValue(for: c)
+                    self.log("map_settings(\(self.settingsMapPage)) read 요청")
                 }
             }
             // 쓰기 완료 콜백
@@ -605,6 +627,45 @@ extension BLEManager: CBPeripheralDelegate {
                 }
             }
         } else if connectionState == .connected {
+            // map_settings 응답 처리
+            if isReadingSettingsMap {
+                var pageMap: [Int: String] = [:]
+                if let dict = decoded as? [Int: Any] {
+                    // {35: {id: "name", ...}} 또는 {35: null} 형식
+                    let settingsId = commandMap["map_settings"] ?? -1
+                    if let inner = dict[settingsId] as? [Int: String] {
+                        pageMap = inner
+                    } else if let inner = dict[settingsId] as? [Int: Any] {
+                        for (k, v) in inner {
+                            if let name = v as? String { pageMap[k] = name }
+                        }
+                    }
+                    // 직접 {id: "name"} 형식
+                    if pageMap.isEmpty {
+                        for (k, v) in dict {
+                            if let name = v as? String { pageMap[k] = name }
+                        }
+                    }
+                }
+
+                if pageMap.isEmpty {
+                    // 빈 페이지 → 읽기 완료
+                    isReadingSettingsMap = false
+                    log("map_settings 완료 — \(settingsMap.count)개 키:")
+                    for key in settingsMap.keys.sorted() {
+                        log("  \(key): \(settingsMap[key] ?? "?")")
+                    }
+                } else {
+                    settingsMap.merge(pageMap) { _, new in new }
+                    log("map_settings 페이지 \(settingsMapPage): \(pageMap.count)개 (누적 \(settingsMap.count)개)")
+                    // 다음 페이지 요청
+                    settingsMapPage += 1
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                        self?.sendSettingsMapPage()
+                    }
+                }
+                return
+            }
             if let event = protocol_.parseButtonEvent(decoded, commandMap: commandMap) {
                 lastButtonEvent = event
                 log("버튼: \(event.buttonName) \(event.eventName)")

@@ -170,6 +170,29 @@ struct WatchSettingsView: View {
                         ble.log("steps_target: \(stepGoal)")
                     }
                 }
+                // MARK: - Settings 맵 탐색
+                Section("펌웨어 Settings 키 탐색") {
+                    Button("map_settings 읽기") {
+                        ble.readSettingsMap()
+                    }
+
+                    if !ble.settingsMap.isEmpty {
+                        ForEach(ble.settingsMap.keys.sorted(), id: \.self) { key in
+                            HStack {
+                                Text("\(key)")
+                                    .font(.system(.body, design: .monospaced))
+                                    .frame(width: 40, alignment: .trailing)
+                                Text(ble.settingsMap[key] ?? "?")
+                                    .font(.system(.body, design: .monospaced))
+                            }
+                        }
+                        Text("총 \(ble.settingsMap.count)개 키")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                #if DEBUG
                 // MARK: - stepper_goto 테스트
                 Section("stepper_goto 테스트") {
                     Text("모터 0=시침, 1=분침 (추정)\n위치값과 시계 눈금의 매핑을 확인하세요.")
@@ -252,6 +275,7 @@ struct WatchSettingsView: View {
                     }
                     .font(.caption)
                 }
+                #endif
             }
             .navigationTitle("시계 설정")
             .navigationBarTitleDisplayMode(.inline)
@@ -259,8 +283,10 @@ struct WatchSettingsView: View {
         }
     }
 
+    #if DEBUG
     @State private var testMotor = 0
     @State private var testPosition = 0
+    #endif
 
     // MARK: - Helpers
 

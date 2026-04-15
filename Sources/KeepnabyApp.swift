@@ -23,72 +23,10 @@ struct KeepnabyApp: App {
                         bleManager?.sendCommand(name: "vibrator_start", value: [150])
                     }
 
-                    // 연결 완료 시 모든 설정 자동 재전송
-                    let sendAllConfig: (BLEManager) -> Void = { [weak notificationMappingManager] ble in
-                        // 1. vibrator_config — 진동 패턴 (펌웨어가 ANCS 알림 시 사용)
-                        ble.sendCommand(name: "vibrator_config", value: [8, 50, 25, 80, 25, 35, 25, 35, 25, 40, 25, 90])
-                        ble.sendCommand(name: "vibrator_config", value: [9, 31, 30, 61, 30, 110, 300, 31, 30, 61, 30, 110])
-                        ble.sendCommand(name: "vibrator_config", value: [10, 31, 30, 190, 300, 50, 30, 90, 300, 50, 30, 90])
-                        ble.log("재전송: vibrator_config 패턴 8/9/10")
-
-                        // 2. 크라운 + ANCS 바늘 활성화 (세 번째 값 18이 핵심!)
-                        let crownMode = UserDefaults.standard.integer(forKey: "kronaby_crown_mode")
-                        ble.sendCommand(name: "complications", value: [5, crownMode, 18])
-                        ble.log("재전송: complications([5, \(crownMode), 18])")
-
-                        // 2.5. settings — 공식 앱이 초기 설정 시 전송 (BLE 캡처에서 발견)
-                        ble.sendCommand(name: "settings", value: [154: true, 176: 1, 178: 70, 174: false, 160: 1100] as [Int: Any])
-                        ble.log("재전송: settings")
-
-                        // 3. 걸음수 목표
-                        let stepGoal = UserDefaults.standard.integer(forKey: "kronaby_step_goal_v2")
-                        if stepGoal > 0 {
-                            ble.sendCommand(name: "steps_target", value: stepGoal)
-                            ble.sendCommand(name: "config_base", value: [1, 1])
-                            ble.log("재전송: steps_target=\(stepGoal)")
-                        }
-
-                        // 4. DND (stillness)
-                        let ud = UserDefaults.standard
-                        let dndEnabled = ud.bool(forKey: "kronaby_dnd_enabled")
-                        if dndEnabled {
-                            let sh = ud.integer(forKey: "kronaby_dnd_start_h")
-                            let sm = ud.integer(forKey: "kronaby_dnd_start_m")
-                            let eh = ud.integer(forKey: "kronaby_dnd_end_h")
-                            let em = ud.integer(forKey: "kronaby_dnd_end_m")
-                            ble.sendCommand(name: "dnd", value: [1, sh, sm, eh, em])
-                            ble.log("재전송: DND \(sh):\(String(format: "%02d", sm))~\(eh):\(String(format: "%02d", em))")
-                        }
-
-                        // 5. ANCS 필터 + alert_assign + remote_data
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                            notificationMappingManager?.applyToWatch(ble: ble)
-                            ble.log("재전송: ANCS 필터 + remote_data")
-                        }
-                    }
-
+                    // 재연결 시 최소한의 명령만 전송 (설정은 펌웨어에 저장됨)
                     bleManager.onConnected = { [weak bleManager] in
                         guard let ble = bleManager else { return }
-                        sendAllConfig(ble)
-                        // periodic (cmd 38) 탐색 — 시계가 주기적 데이터를 보내게 하는 명령인지 확인
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                            ble.tryPeriodicCommand()
-                        }
-                    }
-
-                    // 1시간 주기 전체 설정 재전송 (공식 앱과 동일)
-                    bleManager.onPeriodicSync = { [weak bleManager] in
-                        guard let ble = bleManager else { return }
-                        sendAllConfig(ble)
-                    }
-
-                    // State Restoration으로 이미 연결 완료된 경우 — onConnected가 nil일 때 놓친 설정 보상
-                    if bleManager.connectionState == .connected {
-                        bleManager.log("onAppear: 이미 연결됨 — 설정 재전송")
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak bleManager] in
-                            guard let ble = bleManager, ble.connectionState == .connected else { return }
-                            sendAllConfig(ble)
-                        }
+                        ble.log("연결 완료 — 최소 초기화만 전송")
                     }
 
                     // 백그라운드 sync 알림 수신 → BLE keepalive 실행
