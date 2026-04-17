@@ -1,5 +1,60 @@
 import Foundation
 
+// MARK: - ANCS 카테고리
+
+enum AncsCategory: Int, Codable, CaseIterable, Identifiable {
+    case other = 0
+    case incomingCall = 1
+    case missedCall = 2
+    case voicemail = 3
+    case social = 4
+    case schedule = 5
+    case email = 6
+    case news = 7
+    case healthFitness = 8
+    case businessFinance = 9
+    case location = 10
+    case entertainment = 11
+
+    var id: Int { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .other: return "기타"
+        case .incomingCall: return "수신 전화"
+        case .missedCall: return "부재중 전화"
+        case .voicemail: return "음성 메일"
+        case .social: return "소셜 미디어"
+        case .schedule: return "일정"
+        case .email: return "이메일"
+        case .news: return "뉴스"
+        case .healthFitness: return "건강/피트니스"
+        case .businessFinance: return "비즈니스/금융"
+        case .location: return "위치"
+        case .entertainment: return "엔터테인먼트"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .other: return "app.badge.fill"
+        case .incomingCall: return "phone.fill"
+        case .missedCall: return "phone.arrow.down.left"
+        case .voicemail: return "recordingtape"
+        case .social: return "person.2.fill"
+        case .schedule: return "calendar"
+        case .email: return "envelope.fill"
+        case .news: return "newspaper.fill"
+        case .healthFitness: return "heart.fill"
+        case .businessFinance: return "chart.line.uptrend.xyaxis"
+        case .location: return "location.fill"
+        case .entertainment: return "film"
+        }
+    }
+
+    var bitmask: Int { 1 << (rawValue + 8) }
+}
+
 // MARK: - 알림 앱 모델
 
 struct NotificationApp: Codable, Identifiable, Hashable {
@@ -32,10 +87,35 @@ struct NotificationApp: Codable, Identifiable, Hashable {
 
 struct NotificationSlot: Codable, Identifiable {
     let id: Int              // 1, 2, 3
-    var appIds: Set<String>  // NotificationApp.id 참조
+    var appIds: Set<String>  // NotificationApp.id 참조 (앱별 필터)
+    var categories: Set<Int> // AncsCategory.rawValue (카테고리 필터)
     var enabled: Bool
 
     var positionName: String { "\(id)시 방향 (진동 \(id)회)" }
+
+    var hasContent: Bool { !appIds.isEmpty || !categories.isEmpty }
+
+    var combinedCategoryBitmask: Int {
+        var mask = 0
+        for catRaw in categories {
+            if let cat = AncsCategory(rawValue: catRaw) {
+                mask |= cat.bitmask
+            }
+        }
+        return mask
+    }
+
+    func hasCategory(_ cat: AncsCategory) -> Bool {
+        categories.contains(cat.rawValue)
+    }
+
+    mutating func toggleCategory(_ cat: AncsCategory) {
+        if categories.contains(cat.rawValue) {
+            categories.remove(cat.rawValue)
+        } else {
+            categories.insert(cat.rawValue)
+        }
+    }
 }
 
 // MARK: - Manager
@@ -44,7 +124,7 @@ final class NotificationMappingManager: ObservableObject {
     @Published var slots: [NotificationSlot] = []
     @Published var customApps: [NotificationApp] = []
 
-    private static let slotsKey = "kronaby_app_slots_v1"
+    private static let slotsKey = "kronaby_app_slots_v2"
     private static let customAppsKey = "kronaby_custom_apps_v1"
 
     /// 큐레이션된 앱 목록 (BLE 캡처 기반 + 인기 앱)
@@ -100,9 +180,9 @@ final class NotificationMappingManager: ObservableObject {
         load()
         if slots.isEmpty {
             slots = [
-                NotificationSlot(id: 1, appIds: [], enabled: false),
-                NotificationSlot(id: 2, appIds: [], enabled: false),
-                NotificationSlot(id: 3, appIds: [], enabled: false),
+                NotificationSlot(id: 1, appIds: [], categories: [], enabled: false),
+                NotificationSlot(id: 2, appIds: [], categories: [], enabled: false),
+                NotificationSlot(id: 3, appIds: [], categories: [], enabled: false),
             ]
         }
     }
@@ -124,7 +204,6 @@ final class NotificationMappingManager: ObservableObject {
 
     func removeCustomApp(id: String) {
         customApps.removeAll { $0.id == id }
-        // 슬롯에서도 제거
         for i in slots.indices {
             slots[i].appIds.remove(id)
         }
@@ -146,7 +225,7 @@ final class NotificationMappingManager: ObservableObject {
 
         // 1. alert_assign
         var assignArray = [0, 0, 0]
-        for slot in slots where slot.enabled && !slot.appIds.isEmpty {
+        for slot in slots where slot.enabled && slot.hasContent {
             if slot.id >= 1 && slot.id <= 3 {
                 assignArray[slot.id - 1] = 1
             }
@@ -169,20 +248,35 @@ final class NotificationMappingManager: ObservableObject {
         ble.log("필터 삭제 (0~34)")
         delay += 0.5
 
-        // 3. 슬롯별 앱 필터 설정
-        // BLE 캡처 패턴: {alert: slotNum} → {ancs_filter: [idx, 0xFFFFFF, 0, bundlePrefix, vibSlot]}
+        // 3. 슬롯별 필터 설정
         var filterIndex = 0
-        for slot in slots where slot.enabled && !slot.appIds.isEmpty {
+        for slot in slots where slot.enabled && slot.hasContent {
             let vibSlot = slot.id
             let capturedDelay = delay
 
-            // alert 명령: 슬롯 활성화 (BLE 캡처에서 확인)
+            // alert 명령: 슬롯 활성화
             DispatchQueue.main.asyncAfter(deadline: .now() + capturedDelay) {
                 ble.sendCommand(name: "alert", value: vibSlot)
                 ble.log("alert(\(vibSlot))")
             }
             delay += 0.3
 
+            // 3a. 카테고리 필터 (bitmask 방식)
+            if !slot.categories.isEmpty {
+                let idx = filterIndex
+                let bitmask = slot.combinedCategoryBitmask
+                let vib = vibSlot
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                    ble.sendCommand(name: "ancs_filter", value: [
+                        idx, bitmask, 255, "", vib
+                    ] as [Any])
+                    ble.log("ancs_filter[\(idx)]: 카테고리 bitmask=\(bitmask) → 진동 \(vib)")
+                }
+                filterIndex += 1
+                delay += 0.3
+            }
+
+            // 3b. 앱별 필터 (번들 ID 방식)
             for appId in slot.appIds.sorted() {
                 guard let app = allApps.first(where: { $0.id == appId }) else { continue }
                 let idx = filterIndex
@@ -201,7 +295,7 @@ final class NotificationMappingManager: ObservableObject {
 
         // 4. remote_data — 바늘 위치
         let remoteDelay = delay + 0.5
-        for slot in slots where slot.enabled && !slot.appIds.isEmpty {
+        for slot in slots where slot.enabled && slot.hasContent {
             let pos = slot.id
             DispatchQueue.main.asyncAfter(deadline: .now() + remoteDelay + Double(pos - 1) * 0.3) {
                 ble.sendCommand(name: "remote_data", value: [10, 0, pos])

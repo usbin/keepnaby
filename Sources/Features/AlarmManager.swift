@@ -110,9 +110,9 @@ final class AlarmManager: ObservableObject {
             assignArray[self.alarmSlot - 1] = 1
         }
         // ANCS 슬롯 정보 읽어서 병합
-        if let data = UserDefaults.standard.data(forKey: "kronaby_app_slots_v1"),
+        if let data = UserDefaults.standard.data(forKey: "kronaby_app_slots_v2"),
            let slots = try? JSONDecoder().decode([NotificationSlot].self, from: data) {
-            for slot in slots where slot.enabled && !slot.appIds.isEmpty {
+            for slot in slots where slot.enabled && slot.hasContent {
                 if slot.id >= 1 && slot.id <= 3 {
                     assignArray[slot.id - 1] = 1
                 }

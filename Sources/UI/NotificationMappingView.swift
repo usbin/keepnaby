@@ -9,7 +9,7 @@ struct NotificationMappingView: View {
         NavigationStack {
             Form {
                 Section {
-                    Text("알림이 오면 시계 바늘이 숫자를 가리키고 진동합니다.\n위치 = 진동 횟수 (1시=1회, 2시=2회, 3시=3회)\n앱별로 알림을 할당하세요. 설정은 시계에 저장됩니다.")
+                    Text("알림이 오면 시계 바늘이 숫자를 가리키고 진동합니다.\n위치 = 진동 횟수 (1시=1회, 2시=2회, 3시=3회)\n카테고리 또는 앱별로 알림을 할당하세요. 설정은 시계에 저장됩니다.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -25,45 +25,64 @@ struct NotificationMappingView: View {
                         }
 
                         if slot.enabled {
-                            // 할당된 앱 목록
-                            let assignedApps = mappingManager.allApps.filter { slot.appIds.contains($0.id) }
-                            ForEach(assignedApps) { app in
-                                HStack {
-                                    Image(systemName: app.systemImage)
-                                        .foregroundStyle(.blue)
-                                        .frame(width: 24)
-                                    VStack(alignment: .leading) {
-                                        Text(app.displayName)
-                                        Text(app.bundleIdPrefix)
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
+                            // MARK: 카테고리 필터
+                            DisclosureGroup("카테고리 필터") {
+                                ForEach(AncsCategory.allCases) { cat in
+                                    HStack {
+                                        Image(systemName: cat.systemImage)
+                                            .foregroundStyle(slot.hasCategory(cat) ? .blue : .gray)
+                                            .frame(width: 24)
+                                        Text(cat.displayName)
+                                        Spacer()
+                                        if slot.hasCategory(cat) {
+                                            Image(systemName: "checkmark")
+                                                .foregroundStyle(.blue)
+                                        }
                                     }
-                                    Spacer()
-                                    Button {
-                                        slot.appIds.remove(app.id)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture {
+                                        slot.toggleCategory(cat)
                                         mappingManager.save()
-                                    } label: {
-                                        Image(systemName: "minus.circle.fill")
-                                            .foregroundStyle(.red)
                                     }
                                 }
                             }
 
-                            if assignedApps.isEmpty {
-                                Text("앱을 추가하세요")
-                                    .foregroundStyle(.secondary)
-                                    .font(.caption)
-                            }
+                            // MARK: 앱별 필터
+                            DisclosureGroup("앱별 필터") {
+                                let assignedApps = mappingManager.allApps.filter { slot.appIds.contains($0.id) }
+                                ForEach(assignedApps) { app in
+                                    HStack {
+                                        Image(systemName: app.systemImage)
+                                            .foregroundStyle(.blue)
+                                            .frame(width: 24)
+                                        VStack(alignment: .leading) {
+                                            Text(app.displayName)
+                                            Text(app.bundleIdPrefix)
+                                                .font(.caption2)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        Spacer()
+                                        Button {
+                                            slot.appIds.remove(app.id)
+                                            mappingManager.save()
+                                        } label: {
+                                            Image(systemName: "minus.circle.fill")
+                                                .foregroundStyle(.red)
+                                        }
+                                    }
+                                }
 
-                            // 앱 추가 링크
-                            NavigationLink {
-                                AppPickerView(slot: $slot, mappingManager: mappingManager)
-                            } label: {
-                                Label("앱 추가", systemImage: "plus.circle")
+                                NavigationLink {
+                                    AppPickerView(slot: $slot, mappingManager: mappingManager)
+                                } label: {
+                                    Label("앱 추가", systemImage: "plus.circle")
+                                }
                             }
 
                             // 필터 수 경고
-                            let totalFilters = mappingManager.slots.reduce(0) { $0 + $1.appIds.count }
+                            let totalFilters = mappingManager.slots.reduce(0) {
+                                $0 + $1.appIds.count + ($1.categories.isEmpty ? 0 : 1)
+                            }
                             if totalFilters > 30 {
                                 Text("필터 \(totalFilters)/35개 — 최대 35개까지 설정 가능")
                                     .font(.caption)
