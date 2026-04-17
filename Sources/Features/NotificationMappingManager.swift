@@ -131,44 +131,44 @@ final class NotificationMappingManager: ObservableObject {
     static let knownApps: [NotificationApp] = [
         // 메시징
         NotificationApp(id: "messages", bundleIdPrefix: "com.apple.MobileSMS", displayName: "메시지", systemImage: "message.fill", category: .messaging),
-        NotificationApp(id: "kakaotalk", bundleIdPrefix: "com.iwilab.KakaoT", displayName: "카카오톡", systemImage: "bubble.left.fill", category: .messaging),
+        NotificationApp(id: "kakaotalk", bundleIdPrefix: "com.iwilab.KakaoTalk", displayName: "카카오톡", systemImage: "bubble.left.fill", category: .messaging),
         NotificationApp(id: "line", bundleIdPrefix: "jp.naver.line", displayName: "LINE", systemImage: "bubble.left.fill", category: .messaging),
-        NotificationApp(id: "whatsapp", bundleIdPrefix: "net.whatsapp.Whats", displayName: "WhatsApp", systemImage: "bubble.left.fill", category: .messaging),
-        NotificationApp(id: "telegram", bundleIdPrefix: "ph.telegra.Telegr", displayName: "Telegram", systemImage: "paperplane.fill", category: .messaging),
-        NotificationApp(id: "signal", bundleIdPrefix: "org.whispersyste", displayName: "Signal", systemImage: "lock.fill", category: .messaging),
+        NotificationApp(id: "whatsapp", bundleIdPrefix: "net.whatsapp.WhatsApp", displayName: "WhatsApp", systemImage: "bubble.left.fill", category: .messaging),
+        NotificationApp(id: "telegram", bundleIdPrefix: "ph.telegra.Telegraph", displayName: "Telegram", systemImage: "paperplane.fill", category: .messaging),
+        NotificationApp(id: "signal", bundleIdPrefix: "org.whispersystems.signal", displayName: "Signal", systemImage: "lock.fill", category: .messaging),
 
         // 소셜
-        NotificationApp(id: "instagram", bundleIdPrefix: "com.burbn.instagr", displayName: "Instagram", systemImage: "camera.fill", category: .social),
-        NotificationApp(id: "twitter", bundleIdPrefix: "com.atebits.Twee", displayName: "X (Twitter)", systemImage: "at", category: .social),
-        NotificationApp(id: "threads", bundleIdPrefix: "com.burbn.barcel", displayName: "Threads", systemImage: "at", category: .social),
-        NotificationApp(id: "facebook", bundleIdPrefix: "com.facebook.Fac", displayName: "Facebook", systemImage: "person.2.fill", category: .social),
-        NotificationApp(id: "fbmessenger", bundleIdPrefix: "com.facebook.Mes", displayName: "Messenger", systemImage: "bubble.left.and.bubble.right.fill", category: .social),
-        NotificationApp(id: "discord", bundleIdPrefix: "com.hammerandchi", displayName: "Discord", systemImage: "headphones", category: .social),
-        NotificationApp(id: "slack", bundleIdPrefix: "com.tinyspeck.ch", displayName: "Slack", systemImage: "number", category: .social),
+        NotificationApp(id: "instagram", bundleIdPrefix: "com.burbn.instagram", displayName: "Instagram", systemImage: "camera.fill", category: .social),
+        NotificationApp(id: "twitter", bundleIdPrefix: "com.atebits.Tweetie2", displayName: "X (Twitter)", systemImage: "at", category: .social),
+        NotificationApp(id: "threads", bundleIdPrefix: "com.burbn.barcelona", displayName: "Threads", systemImage: "at", category: .social),
+        NotificationApp(id: "facebook", bundleIdPrefix: "com.facebook.Facebook", displayName: "Facebook", systemImage: "person.2.fill", category: .social),
+        NotificationApp(id: "fbmessenger", bundleIdPrefix: "com.facebook.Messenger", displayName: "Messenger", systemImage: "bubble.left.and.bubble.right.fill", category: .social),
+        NotificationApp(id: "discord", bundleIdPrefix: "com.hammerandchisel.discord", displayName: "Discord", systemImage: "headphones", category: .social),
+        NotificationApp(id: "slack", bundleIdPrefix: "com.tinyspeck.chatlyio", displayName: "Slack", systemImage: "number", category: .social),
 
         // 이메일
-        NotificationApp(id: "mail", bundleIdPrefix: "com.apple.mobile", displayName: "메일", systemImage: "envelope.fill", category: .email),
+        NotificationApp(id: "mail", bundleIdPrefix: "com.apple.mobilemail", displayName: "메일", systemImage: "envelope.fill", category: .email),
         NotificationApp(id: "gmail", bundleIdPrefix: "com.google.Gmail", displayName: "Gmail", systemImage: "envelope.fill", category: .email),
-        NotificationApp(id: "outlook", bundleIdPrefix: "com.microsoft.Of", displayName: "Outlook", systemImage: "envelope.fill", category: .email),
-        NotificationApp(id: "naver_mail", bundleIdPrefix: "com.nhn.NID.mail", displayName: "네이버 메일", systemImage: "envelope.fill", category: .email),
+        NotificationApp(id: "outlook", bundleIdPrefix: "com.microsoft.Office.Outlook", displayName: "Outlook", systemImage: "envelope.fill", category: .email),
+        NotificationApp(id: "naver_mail", bundleIdPrefix: "com.nhn.NID.navermail", displayName: "네이버 메일", systemImage: "envelope.fill", category: .email),
 
         // 전화
-        NotificationApp(id: "phone", bundleIdPrefix: "com.apple.mobile", displayName: "전화", systemImage: "phone.fill", category: .call),
-        NotificationApp(id: "facetime", bundleIdPrefix: "com.apple.faceti", displayName: "FaceTime", systemImage: "video.fill", category: .call),
+        NotificationApp(id: "phone", bundleIdPrefix: "com.apple.mobilephone", displayName: "전화", systemImage: "phone.fill", category: .call),
+        NotificationApp(id: "facetime", bundleIdPrefix: "com.apple.facetime", displayName: "FaceTime", systemImage: "video.fill", category: .call),
 
         // 생산성
-        NotificationApp(id: "calendar", bundleIdPrefix: "com.apple.mobile", displayName: "캘린더", systemImage: "calendar", category: .productivity),
-        NotificationApp(id: "reminders", bundleIdPrefix: "com.apple.Remind", displayName: "미리알림", systemImage: "checklist", category: .productivity),
+        NotificationApp(id: "calendar", bundleIdPrefix: "com.apple.mobilecal", displayName: "캘린더", systemImage: "calendar", category: .productivity),
+        NotificationApp(id: "reminders", bundleIdPrefix: "com.apple.Reminders", displayName: "미리알림", systemImage: "checklist", category: .productivity),
         NotificationApp(id: "notion", bundleIdPrefix: "notion.id", displayName: "Notion", systemImage: "doc.text", category: .productivity),
-        NotificationApp(id: "teams", bundleIdPrefix: "com.microsoft.sk", displayName: "Teams", systemImage: "person.3.fill", category: .productivity),
+        NotificationApp(id: "teams", bundleIdPrefix: "com.microsoft.skype.teams", displayName: "Teams", systemImage: "person.3.fill", category: .productivity),
 
         // 엔터테인먼트
-        NotificationApp(id: "youtube", bundleIdPrefix: "com.google.ios.y", displayName: "YouTube", systemImage: "play.rectangle.fill", category: .entertainment),
-        NotificationApp(id: "netflix", bundleIdPrefix: "com.netflix.Netf", displayName: "Netflix", systemImage: "film", category: .entertainment),
-        NotificationApp(id: "toss", bundleIdPrefix: "viva.republica.i", displayName: "토스", systemImage: "wonsign.circle.fill", category: .other),
-        NotificationApp(id: "naver", bundleIdPrefix: "com.nhn.NaverSe", displayName: "네이버", systemImage: "globe", category: .other),
-        NotificationApp(id: "coupang", bundleIdPrefix: "com.coupang.Coup", displayName: "쿠팡", systemImage: "cart.fill", category: .other),
-        NotificationApp(id: "baemin", bundleIdPrefix: "com.woowahan.wo", displayName: "배달의민족", systemImage: "takeoutbag.and.cup.and.straw.fill", category: .other),
+        NotificationApp(id: "youtube", bundleIdPrefix: "com.google.ios.youtube", displayName: "YouTube", systemImage: "play.rectangle.fill", category: .entertainment),
+        NotificationApp(id: "netflix", bundleIdPrefix: "com.netflix.Netflix", displayName: "Netflix", systemImage: "film", category: .entertainment),
+        NotificationApp(id: "toss", bundleIdPrefix: "viva.republica.ios", displayName: "토스", systemImage: "wonsign.circle.fill", category: .other),
+        NotificationApp(id: "naver", bundleIdPrefix: "com.nhn.NaverSearch", displayName: "네이버", systemImage: "globe", category: .other),
+        NotificationApp(id: "coupang", bundleIdPrefix: "com.coupang.Coupang", displayName: "쿠팡", systemImage: "cart.fill", category: .other),
+        NotificationApp(id: "baemin", bundleIdPrefix: "com.woowahan.woowahanapp", displayName: "배달의민족", systemImage: "takeoutbag.and.cup.and.straw.fill", category: .other),
     ]
 
     /// 모든 앱 (큐레이션 + 커스텀)
