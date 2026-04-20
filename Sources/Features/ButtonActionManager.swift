@@ -300,7 +300,7 @@ final class ButtonActionManager: ObservableObject {
 
             let travelTime = self.estimatedTravelTime(from: 0, to: value)
 
-            DispatchQueue.main.asyncAfter(deadline: .now() + travelTime + 2.0) { [weak self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + travelTime + 1.0) { [weak self] in
                 guard let self else { return }
 
                 guard value < self.extendedMappings.count else {
@@ -357,12 +357,9 @@ final class ButtonActionManager: ObservableObject {
             return
         }
         isDiceRolling = true
-        // recalibrate(true) → 바늘 0(12시)으로 이동
+        // recalibrate(true) → 바늘 0(12시)으로 이동 (현재 시각에서 출발, 거리 불명)
         bleManager?.sendCommand(name: "recalibrate", value: true)
-        // 펌웨어가 0시로 이동할 시간 대기 후 스핀
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
-            self?.animateDiceSpin(max: max)
-        }
+        playDiceIntro(arrivalWait: 2.0, max: max)
     }
 
     /// 확장입력모드 경로 — recalibrate 이미 활성. 값 표시 위치에서 0으로 되돌린 뒤 스핀
@@ -372,10 +369,18 @@ final class ButtonActionManager: ObservableObject {
             return
         }
         isDiceRolling = true
-        // recalibrate(true) 재발행 → 바늘을 0으로 되돌림 (값 표시 위치 → 0)
+        // recalibrate(true) 재발행 → 바늘을 0으로 되돌림 (값 표시 위치 ≤15 → 이동 짧음)
         bleManager?.sendCommand(name: "recalibrate", value: true)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
-            self?.animateDiceSpin(max: max)
+        playDiceIntro(arrivalWait: 1.5, max: max)
+    }
+
+    /// 주사위 시작 인트로: 12시 도착 대기 → 진동 1회 → 0.5초 → 스핀
+    private func playDiceIntro(arrivalWait: Double, max: Int) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + arrivalWait) { [weak self] in
+            self?.bleManager?.sendCommand(name: "vibrator_start", value: [150])
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                self?.animateDiceSpin(max: max)
+            }
         }
     }
 
