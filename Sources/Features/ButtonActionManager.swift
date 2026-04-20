@@ -13,6 +13,7 @@ enum ButtonActionType: String, Codable, CaseIterable {
     case musicNext = "music_next"
     case musicPrevious = "music_previous"
     case recordLocation = "record_location"
+    case randomDice = "random_dice"
     case iftttWebhook = "ifttt_webhook"
     case shortcut = "shortcut"
     case urlRequest = "url_request"
@@ -28,6 +29,7 @@ enum ButtonActionType: String, Codable, CaseIterable {
         case .musicNext: return "음악: 다음 곡"
         case .musicPrevious: return "음악: 이전 곡"
         case .recordLocation: return "위치 기록"
+        case .randomDice: return "랜덤 주사위"
         case .iftttWebhook: return "IFTTT Webhook"
         case .shortcut: return "단축어 실행 (앱 열림)"
         case .urlRequest: return "URL 요청"
@@ -39,7 +41,7 @@ enum ButtonActionType: String, Codable, CaseIterable {
         case .none: return ""
         case .findPhone, .showDate, .showBattery, .showSteps: return "기본"
         case .musicPlayPause, .musicNext, .musicPrevious: return "음악"
-        case .recordLocation: return "위치"
+        case .recordLocation, .randomDice: return "재미"
         case .iftttWebhook, .shortcut, .urlRequest: return "고급"
         }
     }
@@ -50,6 +52,26 @@ struct ButtonAction: Codable, Equatable {
     var iftttEventName: String = ""
     var shortcutName: String = ""
     var urlString: String = ""
+    var diceMax: Int = 6  // 주사위 최대값 (1...diceMax 범위에서 랜덤)
+
+    /// 실행 내역용 짧은 설명
+    var summary: String {
+        switch type {
+        case .none: return "없음"
+        case .findPhone: return "폰 찾기"
+        case .showDate: return "날짜 확인"
+        case .showBattery: return "배터리"
+        case .showSteps: return "걸음수"
+        case .musicPlayPause: return "재생/일시정지"
+        case .musicNext: return "다음 곡"
+        case .musicPrevious: return "이전 곡"
+        case .recordLocation: return "위치 기록"
+        case .randomDice: return "주사위 (1–\(diceMax))"
+        case .iftttWebhook: return "IFTTT: \(iftttEventName)"
+        case .shortcut: return "단축어: \(shortcutName)"
+        case .urlRequest: return "URL 요청"
+        }
+    }
 }
 
 struct ButtonKey: Hashable, Codable {
@@ -90,6 +112,7 @@ final class ButtonActionManager: ObservableObject {
     private let musicController = MusicController()
     var locationRecorder: LocationRecorder?
     var bleManager: BLEManager?
+    var historyManager: ActionHistoryManager?
 
     private static let mappingsKey = "button_mappings"
     private static let iftttKeyKey = "ifttt_webhook_key"
@@ -143,6 +166,10 @@ final class ButtonActionManager: ObservableObject {
         // 일반 모드
         let key = ButtonKey(button: button, event: event)
         let action = getAction(for: key)
+        historyManager?.record(
+            trigger: "\(key.displayButton) \(key.displayEvent)",
+            actionName: action.summary
+        )
         executeAction(action)
     }
 
@@ -166,6 +193,8 @@ final class ButtonActionManager: ObservableObject {
             musicController.previousTrack()
         case .recordLocation:
             locationRecorder?.recordCurrentLocation()
+        case .randomDice:
+            rollRandomDice(max: max(2, action.diceMax))
         case .iftttWebhook:
             fireIFTTT(eventName: action.iftttEventName)
         case .shortcut:
@@ -279,6 +308,12 @@ final class ButtonActionManager: ObservableObject {
                     return
                 }
                 let action = self.extendedMappings[value]
+                let binary = String(value, radix: 2)
+                let padded = String(repeating: "0", count: max(0, 4 - binary.count)) + binary
+                self.historyManager?.record(
+                    trigger: "확장입력 \(value) (\(padded))",
+                    actionName: action.summary
+                )
                 guard action.type != .none else {
                     self.exitRecalibrateAndSyncTime()
                     return
@@ -295,6 +330,72 @@ final class ButtonActionManager: ObservableObject {
                     self.executeAction(action)
                 }
             }
+        }
+    }
+
+    // MARK: - Random Dice
+
+    private var isDiceRolling = false
+
+    private func rollRandomDice(max: Int) {
+        guard !isDiceRolling else {
+            bleManager?.log("주사위 중복 실행 무시")
+            return
+        }
+        guard bleManager?.connectionState == .connected else {
+            bleManager?.log("주사위 실패 — 미연결")
+            return
+        }
+        isDiceRolling = true
+        let result = Int.random(in: 1...max)
+        bleManager?.log("주사위 굴리기 시작 (1–\(max)) → 결과: \(result)")
+
+        // 1. recalibrate(true) → 바늘 0(12시)으로 이동
+        bleManager?.sendCommand(name: "recalibrate", value: true)
+
+        // 2. 펌웨어가 0시로 이동할 시간 대기 후 스핀 애니메이션
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            self?.animateDiceSpin(finalResult: result, max: max)
+        }
+    }
+
+    /// 바늘을 빠르게 돌리다 점점 느려지며 finalResult에서 정지
+    private func animateDiceSpin(finalResult: Int, max: Int) {
+        // 전체 2바퀴 + finalResult 까지의 마지막 구간
+        var sequence: [Int] = []
+        for _ in 0..<2 {
+            for p in 1...max { sequence.append(p) }
+        }
+        for p in 1...finalResult { sequence.append(p) }
+
+        let stepCount = sequence.count
+        var delay: Double = 0
+
+        for (i, pos) in sequence.enumerated() {
+            let progress = Double(i) / Double(Swift.max(stepCount - 1, 1))
+            // 0.12초 → 0.55초 (이차 곡선으로 서서히 느려짐)
+            let interval = 0.12 + pow(progress, 2.2) * 0.45
+
+            let capturedPos = pos
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                self?.bleManager?.sendCommand(name: "stepper_goto", value: [0, capturedPos])
+                self?.bleManager?.sendCommand(name: "stepper_goto", value: [1, capturedPos])
+            }
+            delay += interval
+        }
+
+        // 도착 후 잠시 대기 → 진동 1회
+        let vibrateAt = delay + 0.6
+        DispatchQueue.main.asyncAfter(deadline: .now() + vibrateAt) { [weak self] in
+            self?.bleManager?.sendCommand(name: "vibrator_start", value: [300])
+            self?.bleManager?.log("주사위 결과: \(finalResult) (진동)")
+        }
+
+        // 결과 표시 후 시계 모드 복귀
+        DispatchQueue.main.asyncAfter(deadline: .now() + vibrateAt + 2.5) { [weak self] in
+            guard let self else { return }
+            self.exitRecalibrateAndSyncTime()
+            self.isDiceRolling = false
         }
     }
 

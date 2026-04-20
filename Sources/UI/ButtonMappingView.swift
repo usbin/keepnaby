@@ -112,20 +112,7 @@ struct ButtonMappingView: View {
     }
 
     private func actionSummary(_ action: ButtonAction) -> String {
-        switch action.type {
-        case .none: return "없음"
-        case .findPhone: return "폰 찾기"
-        case .showDate: return "날짜 확인"
-        case .showBattery: return "배터리"
-        case .showSteps: return "걸음수"
-        case .musicPlayPause: return "재생/일시정지"
-        case .musicNext: return "다음 곡"
-        case .musicPrevious: return "이전 곡"
-        case .recordLocation: return "위치 기록"
-        case .iftttWebhook: return "IFTTT: \(action.iftttEventName)"
-        case .shortcut: return "단축어: \(action.shortcutName)"
-        case .urlRequest: return "URL"
-        }
+        action.summary
     }
 }
 
@@ -226,8 +213,9 @@ func actionPicker(selection: Binding<ButtonAction>) -> some View {
             Text("다음 곡").tag(ButtonActionType.musicNext)
             Text("이전 곡").tag(ButtonActionType.musicPrevious)
         }
-        Section("위치") {
+        Section("재미") {
             Text("위치 기록").tag(ButtonActionType.recordLocation)
+            Text("랜덤 주사위").tag(ButtonActionType.randomDice)
         }
         Section("고급") {
             Text("IFTTT Webhook").tag(ButtonActionType.iftttWebhook)
@@ -264,6 +252,14 @@ func actionDetail(action: Binding<ButtonAction>) -> some View {
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
                 .keyboardType(.URL)
+        }
+    case .randomDice:
+        Section("주사위 범위") {
+            Stepper("1 ~ \(action.wrappedValue.diceMax)",
+                    value: action.diceMax, in: 2...60)
+            Text("버튼 누르면 12시부터 돌다 1~\(action.wrappedValue.diceMax) 중 무작위 위치에서 멈추고 진동합니다.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     default:
         EmptyView()

@@ -134,7 +134,11 @@ final class BLEManager: NSObject, ObservableObject {
     }
 
     private var intentionalDisconnect = false
+    private var disconnectTimestamp: Date?
     var onConnected: (() -> Void)?
+
+    /// 장시간 끊김 임계값 — 이보다 오래 끊겼다 재연결되면 ANCS 재구독 유도 목적으로 강제 full reconnect 수행
+    private static let longDisconnectThreshold: TimeInterval = 5 * 60
 
     func disconnect() {
         intentionalDisconnect = true
@@ -142,6 +146,20 @@ final class BLEManager: NSObject, ObservableObject {
             centralManager.cancelPeripheralConnection(peripheral)
             log("연결 해제 요청")
         }
+    }
+
+    /// 수동/자동 ANCS 복구용 — 페리퍼럴 연결을 완전히 끊고 자동 재연결을 유도.
+    /// Bluetooth off/on 을 앱 레벨에서 흉내낸 것. 워치 쪽에서 GATT 재협상이 일어나며
+    /// ANCS 서비스 구독도 다시 이루어질 가능성이 높음.
+    func forceFullReconnect() {
+        guard let peripheral = peripheral else {
+            log("forceFullReconnect: peripheral 없음")
+            return
+        }
+        log("강제 재연결 시작 (ANCS 복구 시도)")
+        // intentionalDisconnect 는 false 로 유지 → didDisconnect 핸들러가 자동 재연결
+        // disconnectTimestamp 가 직후 재설정되지만 gap 이 짧아 재재연결은 트리거되지 않음
+        centralManager.cancelPeripheralConnection(peripheral)
     }
 
     func forgetDevice() {
@@ -298,6 +316,7 @@ final class BLEManager: NSObject, ObservableObject {
         }
 
         saveCommandMap()
+        disconnectTimestamp = nil
         connectionState = .connected
         // 핸드셰이크 write/read 완료 후 충분히 대기 → onboarding_done 전송
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
@@ -404,6 +423,10 @@ extension BLEManager: CBCentralManagerDelegate {
 
         if !intentionalDisconnect, loadSavedCommandMap() != nil {
             // 의도치 않은 끊김 → 자동 재연결 + 알림
+            // 끊김 시각 기록 — 재연결 후 장시간 여부 판단에 사용
+            if disconnectTimestamp == nil {
+                disconnectTimestamp = Date()
+            }
             log("자동 재연결 시도...")
             connectionState = .connecting
             central.connect(peripheral, options: nil)
@@ -411,6 +434,7 @@ extension BLEManager: CBCentralManagerDelegate {
         } else {
             // 유저가 요청한 연결 해제
             intentionalDisconnect = false
+            disconnectTimestamp = nil
             connectionState = .disconnected
             self.peripheral = nil
             commandMap.removeAll()
@@ -483,6 +507,15 @@ extension BLEManager: CBPeripheralDelegate {
                 commandMap = savedMap
                 log("저장된 commandMap 복원 (\(savedMap.count)개)")
                 connectionState = .connected
+
+                // 장시간 끊김 후 재연결이면 ANCS 구독이 끊겼을 가능성이 높음 →
+                // 짧은 지연 후 강제 full reconnect 수행 (Bluetooth off/on 재현)
+                let shouldRefreshAncs: Bool = {
+                    guard let t = disconnectTimestamp else { return false }
+                    return Date().timeIntervalSince(t) >= Self.longDisconnectThreshold
+                }()
+                disconnectTimestamp = nil
+
                 // 초기 페어링과 동일하게 지연 후 명령 전송 — 펌웨어 안정화 대기
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
                     guard let self, self.connectionState == .connected else { return }
@@ -493,6 +526,14 @@ extension BLEManager: CBPeripheralDelegate {
                     self.log("재연결 완료!")
                     BackgroundSyncScheduler.shared.scheduleAppRefresh()
                     self.onConnected?()
+
+                    // 장시간 끊김 후 재연결 → 2초 뒤 ANCS 복구용 강제 재연결
+                    if shouldRefreshAncs {
+                        self.log("장시간 끊김 감지 → 2초 후 ANCS 복구 재연결 예약")
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                            self?.forceFullReconnect()
+                        }
+                    }
                 }
             } else {
                 performHandshake()

@@ -5,6 +5,7 @@ struct ConnectionView: View {
     @EnvironmentObject var actionManager: ButtonActionManager
     @EnvironmentObject var locationRecorder: LocationRecorder
     @EnvironmentObject var notificationMappingManager: NotificationMappingManager
+    @EnvironmentObject var historyManager: ActionHistoryManager
     @State private var showHelp = false
     @State private var showLog = false
     @State private var showForgetConfirm = false
@@ -16,6 +17,7 @@ struct ConnectionView: View {
     @State private var showNotificationMapping = false
     @State private var showAlarm = false
     @State private var showWatchSettings = false
+    @State private var showActionHistory = false
 
     var body: some View {
         NavigationStack {
@@ -206,11 +208,17 @@ struct ConnectionView: View {
                     Image(systemName: showLog ? "terminal.fill" : "terminal")
                 },
                 trailing: Menu {
+                    Button { showActionHistory = true } label: {
+                        Label("실행 내역", systemImage: "clock.arrow.circlepath")
+                    }
                     Button { showHelp = true } label: {
                         Label("페어링 도움말", systemImage: "questionmark.circle")
                     }
                     if ble.connectionState == .connected {
                         Divider()
+                        Button { ble.forceFullReconnect() } label: {
+                            Label("ANCS 재연결", systemImage: "arrow.clockwise.circle")
+                        }
                         Button { ble.disconnect() } label: {
                             Label("연결 해제", systemImage: "wifi.slash")
                         }
@@ -265,6 +273,10 @@ struct ConnectionView: View {
             .sheet(isPresented: $showWatchSettings) {
                 WatchSettingsView()
                     .environmentObject(ble)
+            }
+            .sheet(isPresented: $showActionHistory) {
+                ActionHistoryView()
+                    .environmentObject(historyManager)
             }
         }
     }

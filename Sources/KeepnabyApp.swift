@@ -8,6 +8,7 @@ struct KeepnabyApp: App {
     @StateObject private var actionManager = ButtonActionManager()
     @StateObject private var locationRecorder = LocationRecorder()
     @StateObject private var notificationMappingManager = NotificationMappingManager()
+    @StateObject private var actionHistoryManager = ActionHistoryManager()
 
     var body: some Scene {
         WindowGroup {
@@ -16,9 +17,11 @@ struct KeepnabyApp: App {
                 .environmentObject(actionManager)
                 .environmentObject(locationRecorder)
                 .environmentObject(notificationMappingManager)
+                .environmentObject(actionHistoryManager)
                 .onAppear {
                     actionManager.locationRecorder = locationRecorder
                     actionManager.bleManager = bleManager
+                    actionManager.historyManager = actionHistoryManager
                     locationRecorder.onRecorded = { [weak bleManager] in
                         bleManager?.sendCommand(name: "vibrator_start", value: [150])
                     }
