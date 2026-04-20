@@ -407,13 +407,25 @@ final class ButtonActionManager: ObservableObject {
         for p in 1...diceMax { sequence.append(p) }
         for p in 1...finalResult { sequence.append(p) }
 
-        let stepCount = sequence.count
-        var delay: Double = 0
+        let totalSteps = sequence.count
+        // 마지막 3 스텝은 극적 감속 override — 부드러운 곡선에서 벗어나 "톡... 톡...... 톡........" 느낌
+        // tailIntervals[0]=3번째전, [1]=2번째전, [2]=마지막(결과) 위치에서의 pause
+        let tailIntervals: [Double] = [0.5, 1.1, 0.7]
+        let dramaticTail = Swift.min(tailIntervals.count, totalSteps)
+        let smoothSteps = totalSteps - dramaticTail
 
+        var delay: Double = 0
         for (i, face) in sequence.enumerated() {
-            let progress = Double(i) / Double(Swift.max(stepCount - 1, 1))
-            // 0.15초 → 1.4초 (4차 곡선 — 룰렛처럼 마지막 구간에서 급격히 끌림)
-            let interval = 0.15 + pow(progress, 4.0) * 1.25
+            let stepsFromEnd = totalSteps - 1 - i
+            let interval: Double
+            if stepsFromEnd < dramaticTail {
+                // 마지막 구간 — 고정 드라마틱 값
+                interval = tailIntervals[dramaticTail - 1 - stepsFromEnd]
+            } else {
+                // 메인 구간 — 부드러운 이차 감속 (0.15 → 0.40)
+                let smoothProgress = smoothSteps > 1 ? Double(i) / Double(smoothSteps - 1) : 0.0
+                interval = 0.15 + pow(smoothProgress, 2.0) * 0.25
+            }
             let position = hourMarkPosition(face)
 
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
