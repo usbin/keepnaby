@@ -383,19 +383,20 @@ final class ButtonActionManager: ObservableObject {
         startDiceRoll(travelToZero: travel, max: max)
     }
 
-    /// 12시 도착 대기(travelToZero) → 1초 후 진동 1회 → 0.5초 후 스핀.
+    /// 12시 도착 대기(travelToZero) → 1초 후 진동 1회 → 1초 후 스핀.
     private func startDiceRoll(travelToZero: Double, max: Int) {
         // 도착까지 이동시간 + 1초 뒤 진동
         DispatchQueue.main.asyncAfter(deadline: .now() + travelToZero + 1.0) { [weak self] in
             self?.bleManager?.sendCommand(name: "vibrator_start", value: [150])
             self?.bleManager?.log("주사위: 12시 도착 → 진동 후 스핀 준비")
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
                 self?.animateDiceSpin(max: max)
             }
         }
     }
 
     /// 바늘을 빠르게 돌리다 점점 느려지며 결과값에서 정지.
+    /// 시침(motor 0)은 12시에 고정, 분침(motor 1)만 회전 — 룰렛 비주얼.
     /// 각 face는 다이얼 0–59 스케일에서 `face × 5 % 60` 위치 (시 마크)를 가리킴.
     private func animateDiceSpin(max diceMax: Int) {
         let finalResult = Int.random(in: 1...diceMax)
@@ -411,15 +412,13 @@ final class ButtonActionManager: ObservableObject {
 
         for (i, face) in sequence.enumerated() {
             let progress = Double(i) / Double(Swift.max(stepCount - 1, 1))
-            // 0.25초 → 0.7초 (이차 곡선으로 서서히 느려짐, 펌웨어 큐 부담 줄임)
-            let interval = 0.25 + pow(progress, 2.0) * 0.45
+            // 0.15초 → 1.4초 (4차 곡선 — 룰렛처럼 마지막 구간에서 급격히 끌림)
+            let interval = 0.15 + pow(progress, 4.0) * 1.25
             let position = hourMarkPosition(face)
 
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                guard let self else { return }
-                // 분침/시침 연속 발행 — 펌웨어 큐에 거의 붙어 들어감 (동시 이동 명령 없음)
-                self.bleManager?.sendCommand(name: "stepper_goto", value: [0, position])
-                self.bleManager?.sendCommand(name: "stepper_goto", value: [1, position])
+                // 분침(motor 1)만 이동 — 시침은 인트로에서 12시로 정렬된 상태 유지
+                self?.bleManager?.sendCommand(name: "stepper_goto", value: [1, position])
             }
             delay += interval
         }
