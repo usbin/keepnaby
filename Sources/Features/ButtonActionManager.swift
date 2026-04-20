@@ -408,24 +408,14 @@ final class ButtonActionManager: ObservableObject {
         for p in 1...finalResult { sequence.append(p) }
 
         let totalSteps = sequence.count
-        // 마지막 3 스텝은 극적 감속 override — 부드러운 곡선에서 벗어나 "톡... 톡...... 톡........" 느낌
-        // tailIntervals[0]=3번째전, [1]=2번째전, [2]=마지막(결과) 위치에서의 pause
-        let tailIntervals: [Double] = [0.5, 1.1, 0.7]
-        let dramaticTail = Swift.min(tailIntervals.count, totalSteps)
-        let smoothSteps = totalSteps - dramaticTail
 
+        // 연속 감속 곡선 — 전 구간에 걸쳐 점진적으로 느려지도록.
+        // 범위 0.15 → 1.15 (약 7.6배), 지수 2.5로 후반부 가중.
+        // 스핀 내내 "점점 느려진다" 감각 유지, 끝에서 자연스럽게 착지.
         var delay: Double = 0
         for (i, face) in sequence.enumerated() {
-            let stepsFromEnd = totalSteps - 1 - i
-            let interval: Double
-            if stepsFromEnd < dramaticTail {
-                // 마지막 구간 — 고정 드라마틱 값
-                interval = tailIntervals[dramaticTail - 1 - stepsFromEnd]
-            } else {
-                // 메인 구간 — 부드러운 이차 감속 (0.15 → 0.40)
-                let smoothProgress = smoothSteps > 1 ? Double(i) / Double(smoothSteps - 1) : 0.0
-                interval = 0.15 + pow(smoothProgress, 2.0) * 0.25
-            }
+            let progress = Double(i) / Double(Swift.max(totalSteps - 1, 1))
+            let interval = 0.15 + pow(progress, 2.5) * 1.0
             let position = hourMarkPosition(face)
 
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
