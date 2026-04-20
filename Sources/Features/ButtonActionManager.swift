@@ -66,7 +66,7 @@ struct ButtonAction: Codable, Equatable {
         case .musicNext: return "다음 곡"
         case .musicPrevious: return "이전 곡"
         case .recordLocation: return "위치 기록"
-        case .randomDice: return "주사위 (1–\(diceMax))"
+        case .randomDice: return "주사위 (1시–\(diceMax)시)"
         case .iftttWebhook: return "IFTTT: \(iftttEventName)"
         case .shortcut: return "단축어: \(shortcutName)"
         case .urlRequest: return "URL 요청"
@@ -324,6 +324,9 @@ final class ButtonActionManager: ObservableObject {
                 // 바늘 표시 액션: recalibrate 유지한 채 바로 이동
                 if action.type == .showDate || action.type == .showBattery || action.type == .showSteps {
                     self.executeDisplayAction(action, fromPosition: value)
+                } else if action.type == .randomDice {
+                    // recalibrate 유지 — 값 표시 위치에서 바로 주사위 시작
+                    self.rollDiceInRecalibrate(max: Swift.max(2, action.diceMax))
                 } else {
                     // 일반 액션: recalibrate 종료 후 실행
                     self.exitRecalibrateAndSyncTime()
@@ -337,6 +340,13 @@ final class ButtonActionManager: ObservableObject {
 
     private var isDiceRolling = false
 
+    /// 다이얼 위치 스케일 (0–59) 기준 시(hour) 마크 위치.
+    /// face 1=5, face 2=10, ... face 11=55, face 12=0.
+    private func hourMarkPosition(_ face: Int) -> Int {
+        (face * 5) % 60
+    }
+
+    /// 버튼 직접 매핑 경로 — recalibrate 진입부터 시작
     private func rollRandomDice(max: Int) {
         guard !isDiceRolling else {
             bleManager?.log("주사위 중복 실행 무시")
@@ -347,45 +357,59 @@ final class ButtonActionManager: ObservableObject {
             return
         }
         isDiceRolling = true
-        let result = Int.random(in: 1...max)
-        bleManager?.log("주사위 굴리기 시작 (1–\(max)) → 결과: \(result)")
-
-        // 1. recalibrate(true) → 바늘 0(12시)으로 이동
+        // recalibrate(true) → 바늘 0(12시)으로 이동
         bleManager?.sendCommand(name: "recalibrate", value: true)
-
-        // 2. 펌웨어가 0시로 이동할 시간 대기 후 스핀 애니메이션
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-            self?.animateDiceSpin(finalResult: result, max: max)
+        // 펌웨어가 0시로 이동할 시간 대기 후 스핀
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+            self?.animateDiceSpin(max: max)
         }
     }
 
-    /// 바늘을 빠르게 돌리다 점점 느려지며 finalResult에서 정지
-    private func animateDiceSpin(finalResult: Int, max: Int) {
-        // 전체 2바퀴 + finalResult 까지의 마지막 구간
-        var sequence: [Int] = []
-        for _ in 0..<2 {
-            for p in 1...max { sequence.append(p) }
+    /// 확장입력모드 경로 — recalibrate 이미 활성. 값 표시 위치에서 0으로 되돌린 뒤 스핀
+    private func rollDiceInRecalibrate(max: Int) {
+        guard !isDiceRolling else {
+            bleManager?.log("주사위 중복 실행 무시")
+            return
         }
+        isDiceRolling = true
+        // recalibrate(true) 재발행 → 바늘을 0으로 되돌림 (값 표시 위치 → 0)
+        bleManager?.sendCommand(name: "recalibrate", value: true)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+            self?.animateDiceSpin(max: max)
+        }
+    }
+
+    /// 바늘을 빠르게 돌리다 점점 느려지며 결과값에서 정지.
+    /// 각 face는 다이얼 0–59 스케일에서 `face × 5 % 60` 위치 (시 마크)를 가리킴.
+    private func animateDiceSpin(max diceMax: Int) {
+        let finalResult = Int.random(in: 1...diceMax)
+        bleManager?.log("주사위 스핀 시작 (1–\(diceMax)) → 결과: \(finalResult)")
+
+        // 1.5바퀴 + 결과값 — 풀 사이클 + 부분 사이클로 구성
+        var sequence: [Int] = []
+        for p in 1...diceMax { sequence.append(p) }
         for p in 1...finalResult { sequence.append(p) }
 
         let stepCount = sequence.count
         var delay: Double = 0
 
-        for (i, pos) in sequence.enumerated() {
+        for (i, face) in sequence.enumerated() {
             let progress = Double(i) / Double(Swift.max(stepCount - 1, 1))
-            // 0.12초 → 0.55초 (이차 곡선으로 서서히 느려짐)
-            let interval = 0.12 + pow(progress, 2.2) * 0.45
+            // 0.25초 → 0.7초 (이차 곡선으로 서서히 느려짐, 펌웨어 큐 부담 줄임)
+            let interval = 0.25 + pow(progress, 2.0) * 0.45
+            let position = hourMarkPosition(face)
 
-            let capturedPos = pos
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                self?.bleManager?.sendCommand(name: "stepper_goto", value: [0, capturedPos])
-                self?.bleManager?.sendCommand(name: "stepper_goto", value: [1, capturedPos])
+                guard let self else { return }
+                // 분침/시침 연속 발행 — 펌웨어 큐에 거의 붙어 들어감 (동시 이동 명령 없음)
+                self.bleManager?.sendCommand(name: "stepper_goto", value: [0, position])
+                self.bleManager?.sendCommand(name: "stepper_goto", value: [1, position])
             }
             delay += interval
         }
 
         // 도착 후 잠시 대기 → 진동 1회
-        let vibrateAt = delay + 0.6
+        let vibrateAt = delay + 1.0
         DispatchQueue.main.asyncAfter(deadline: .now() + vibrateAt) { [weak self] in
             self?.bleManager?.sendCommand(name: "vibrator_start", value: [300])
             self?.bleManager?.log("주사위 결과: \(finalResult) (진동)")

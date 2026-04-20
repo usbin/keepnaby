@@ -255,9 +255,9 @@ func actionDetail(action: Binding<ButtonAction>) -> some View {
         }
     case .randomDice:
         Section("주사위 범위") {
-            Stepper("1 ~ \(action.wrappedValue.diceMax)",
-                    value: action.diceMax, in: 2...60)
-            Text("버튼 누르면 12시부터 돌다 1~\(action.wrappedValue.diceMax) 중 무작위 위치에서 멈추고 진동합니다.")
+            Stepper("1시 ~ \(action.wrappedValue.diceMax)시",
+                    value: action.diceMax, in: 2...12)
+            Text("버튼 누르면 12시부터 회전하며 1~\(action.wrappedValue.diceMax) 중 무작위 시각 위치에서 멈추고 진동합니다.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
