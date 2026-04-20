@@ -300,7 +300,7 @@ final class ButtonActionManager: ObservableObject {
 
             let travelTime = self.estimatedTravelTime(from: 0, to: value)
 
-            DispatchQueue.main.asyncAfter(deadline: .now() + travelTime + 1.0) { [weak self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + travelTime + 1.5) { [weak self] in
                 guard let self else { return }
 
                 guard value < self.extendedMappings.count else {
@@ -325,8 +325,8 @@ final class ButtonActionManager: ObservableObject {
                 if action.type == .showDate || action.type == .showBattery || action.type == .showSteps {
                     self.executeDisplayAction(action, fromPosition: value)
                 } else if action.type == .randomDice {
-                    // recalibrate 유지 — 값 표시 위치에서 바로 주사위 시작
-                    self.rollDiceInRecalibrate(max: Swift.max(2, action.diceMax))
+                    // recalibrate 유지 — 값 표시 위치에서 12시로 이동 후 주사위 시작
+                    self.rollDiceInRecalibrate(max: Swift.max(2, action.diceMax), fromPosition: value)
                 } else {
                     // 일반 액션: recalibrate 종료 후 실행
                     self.exitRecalibrateAndSyncTime()
@@ -346,7 +346,8 @@ final class ButtonActionManager: ObservableObject {
         (face * 5) % 60
     }
 
-    /// 버튼 직접 매핑 경로 — recalibrate 진입부터 시작
+    /// 버튼 직접 매핑 경로 — recalibrate 진입부터 시작.
+    /// 시작 위치 불명(현재 시각 어디든) → 보수적으로 30 스텝 거리 가정.
     private func rollRandomDice(max: Int) {
         guard !isDiceRolling else {
             bleManager?.log("주사위 중복 실행 무시")
@@ -357,27 +358,37 @@ final class ButtonActionManager: ObservableObject {
             return
         }
         isDiceRolling = true
-        // recalibrate(true) → 바늘 0(12시)으로 이동 (현재 시각에서 출발, 거리 불명)
+        // recalibrate(true) → 진입 시 펌웨어가 바늘을 0으로 이동.
         bleManager?.sendCommand(name: "recalibrate", value: true)
-        playDiceIntro(arrivalWait: 2.0, max: max)
+        // 명시적 stepper_goto(0) 보강 — 재진입 포함 어떤 상태에서도 12시로 확정.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            self?.bleManager?.sendCommand(name: "stepper_goto", value: [0, 0])
+            self?.bleManager?.sendCommand(name: "stepper_goto", value: [1, 0])
+        }
+        // 시작 위치 보수적 추정: 30 스텝 * 0.06 = 1.8s → 2초
+        startDiceRoll(travelToZero: 2.0, max: max)
     }
 
-    /// 확장입력모드 경로 — recalibrate 이미 활성. 값 표시 위치에서 0으로 되돌린 뒤 스핀
-    private func rollDiceInRecalibrate(max: Int) {
+    /// 확장입력모드 경로 — recalibrate 이미 활성, 바늘이 value 위치에 있음.
+    private func rollDiceInRecalibrate(max: Int, fromPosition: Int) {
         guard !isDiceRolling else {
             bleManager?.log("주사위 중복 실행 무시")
             return
         }
         isDiceRolling = true
-        // recalibrate(true) 재발행 → 바늘을 0으로 되돌림 (값 표시 위치 ≤15 → 이동 짧음)
-        bleManager?.sendCommand(name: "recalibrate", value: true)
-        playDiceIntro(arrivalWait: 1.5, max: max)
+        // 이미 recalibrate 모드 — 재발행만으론 바늘이 이동 안 함. 명시적 stepper_goto(0) 필요.
+        bleManager?.sendCommand(name: "stepper_goto", value: [0, 0])
+        bleManager?.sendCommand(name: "stepper_goto", value: [1, 0])
+        let travel = estimatedTravelTime(from: fromPosition, to: 0)
+        startDiceRoll(travelToZero: travel, max: max)
     }
 
-    /// 주사위 시작 인트로: 12시 도착 대기 → 진동 1회 → 0.5초 → 스핀
-    private func playDiceIntro(arrivalWait: Double, max: Int) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + arrivalWait) { [weak self] in
+    /// 12시 도착 대기(travelToZero) → 1초 후 진동 1회 → 0.5초 후 스핀.
+    private func startDiceRoll(travelToZero: Double, max: Int) {
+        // 도착까지 이동시간 + 1초 뒤 진동
+        DispatchQueue.main.asyncAfter(deadline: .now() + travelToZero + 1.0) { [weak self] in
             self?.bleManager?.sendCommand(name: "vibrator_start", value: [150])
+            self?.bleManager?.log("주사위: 12시 도착 → 진동 후 스핀 준비")
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                 self?.animateDiceSpin(max: max)
             }
