@@ -247,6 +247,7 @@ final class ButtonActionManager: ObservableObject {
         morseCommandBuffer = ""
         feedbackQueue.removeAll()
         isFeedbackPlaying = false
+        pendingSnapDeadline = 0
         currentHourPos = 0
         currentMinutePos = 0
         // 진동 1회 — 시작
@@ -257,24 +258,22 @@ final class ButtonActionManager: ObservableObject {
         bleManager?.log("모스모드 시작 → 0시 (recalibrate)")
     }
 
-    /// recalibrate 모드에서 한쪽 바늘을 절대 위치(분 틱 0~59)로 이동.
-    /// 내부 추적은 분 틱 단위지만 펌웨어 `recalibrate_move`는 모터 스텝 단위 → 송신 시 변환.
-    /// 실측: 분침 15 step → 5분, 시침 15 step → 7.5분. 두 모터 기어비가 달라 분당 스텝 다름.
-    /// 분침: 3 step/분, 시침: 2 step/분.
-    /// 분침(motor 1)은 음수 delta 처리가 펌웨어에서 일관되지 않음(0,0 복귀 시 50/55에서 멈춤 현상) →
-    /// motor 1은 음수 delta 시 +60 더해 forward wrap로 송신. motor 0(시침)은 음수 정상 동작.
+    /// recalibrate 모드에서 바늘을 절대 위치(분 틱 0~59)로 이동.
+    /// 펌웨어 `recalibrate_move(motor, stepDelta)`는 모터 스텝 단위 — 분침 3 step/분, 시침 2 step/분.
+    /// 양 모터 모두 음수 delta 지원 → 반시계 회전. shortest path로 직진 이동.
     private static let stepsPerMinuteMarkHour = 2   // motor 0
     private static let stepsPerMinuteMarkMinute = 3 // motor 1
+
+    private func sendMove(motor: Int, marks: Int) {
+        let scale = motor == 0 ? Self.stepsPerMinuteMarkHour : Self.stepsPerMinuteMarkMinute
+        bleManager?.sendCommand(name: "recalibrate_move", value: [motor, marks * scale])
+    }
+
     private func moveHand(motor: Int, to target: Int) {
         let current = motor == 0 ? currentHourPos : currentMinutePos
-        var delta = target - current
+        let delta = target - current
         guard delta != 0 else { return }
-        if motor == 1 && delta < 0 {
-            delta += 60  // forward wrap (시계방향)
-        }
-        let scale = motor == 0 ? Self.stepsPerMinuteMarkHour : Self.stepsPerMinuteMarkMinute
-        let stepDelta = delta * scale
-        bleManager?.sendCommand(name: "recalibrate_move", value: [motor, stepDelta])
+        sendMove(motor: motor, marks: delta)
         if motor == 0 { currentHourPos = target } else { currentMinutePos = target }
     }
 
@@ -378,6 +377,10 @@ final class ButtonActionManager: ObservableObject {
         return total % 60
     }
 
+    /// 직전 cancelInflightFeedback의 snap 이동 종료 시각 (Date.timeIntervalSinceReferenceDate).
+    /// commitAndExecuteMorse가 이 시각 이후 종료 시퀀스를 진행해 in-flight snap과 충돌 방지.
+    private var pendingSnapDeadline: TimeInterval = 0
+
     /// 진행 중 피드백 콜백 체인을 무효화하고 should-be 위치로 스냅.
     /// generation 증가 → 향후 fired async 콜백은 mismatch로 조기 종료.
     /// 큐 비우기 + isFeedbackPlaying=false + (분침=누적 변위, 시침=count×5)로 절대 이동.
@@ -385,8 +388,15 @@ final class ButtonActionManager: ObservableObject {
         feedbackGeneration += 1
         feedbackQueue.removeAll()
         isFeedbackPlaying = false
-        moveHand(motor: 1, to: minuteDisplacementForCommandBuffer())
-        moveHand(motor: 0, to: morseCommandBuffer.count * 5)
+        let prevHour = currentHourPos
+        let prevMinute = currentMinutePos
+        let hourTarget = morseCommandBuffer.count * 5
+        let minuteTarget = minuteDisplacementForCommandBuffer()
+        moveHand(motor: 1, to: minuteTarget)
+        moveHand(motor: 0, to: hourTarget)
+        let snapTravel = Swift.max(estimatedTravelTime(from: prevHour, to: hourTarget),
+                                   estimatedTravelTime(from: prevMinute, to: minuteTarget))
+        pendingSnapDeadline = Date().timeIntervalSinceReferenceDate + snapTravel + 0.3
     }
 
     private func commitAndExecuteMorse() {
@@ -395,10 +405,12 @@ final class ButtonActionManager: ObservableObject {
         morseCommandBuffer.removeAll()
         feedbackQueue.removeAll()
 
-        // 직전 cancelInflightFeedback가 BLE 큐에 스냅 명령(분침/시침 → should-be)을 넣었을 수 있음.
-        // 그게 펌웨어에서 처리될 시간을 확보한 뒤 종료 시퀀스 진행 — 그렇지 않으면
-        // exitRecalibrate의 0,0 이동이 in-flight 명령들과 섞여 위치가 어긋남.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+        // cancelInflightFeedback가 in-flight snap을 송신했을 수 있음 → 그 deadline 이후 종료 진행.
+        // snap 미발생 시(이미 정지) 즉시 진행. 최소 0.3s 여유로 BLE 큐 처리 보장.
+        let now = Date().timeIntervalSinceReferenceDate
+        let wait = Swift.max(0.3, pendingSnapDeadline - now)
+        pendingSnapDeadline = 0
+        DispatchQueue.main.asyncAfter(deadline: .now() + wait) { [weak self] in
             guard let self else { return }
             self.runMorseExecution(key: key)
         }
@@ -428,52 +440,41 @@ final class ButtonActionManager: ObservableObject {
         historyManager?.record(trigger: "모스 [\(key)]", actionName: action.summary)
         bleManager?.log("모스 명령 실행: [\(key)] → \(action.type.displayName)")
 
-        // 표시 액션은 recalibrate 유지한 채 실행, 그 외는 종료 후 실행
+        // 표시 액션·주사위는 recalibrate 유지한 채 실행 (executeDisplayAction/rollDiceInRecalibrate 끝에 exitRecalibrate),
+        // 그 외는 즉시 exitRecalibrate 후 액션 실행.
+        isMorseMode = false
         if action.type == .showDate || action.type == .showBattery || action.type == .showSteps {
-            isMorseMode = false
-            isRecalibrateActive = false
-            executeDisplayAction(action, fromPosition: max(currentHourPos, currentMinutePos))
+            executeDisplayAction(action)
         } else if action.type == .randomDice {
-            isMorseMode = false
-            isRecalibrateActive = false
-            rollDiceInRecalibrate(max: max(2, action.diceMax), fromPosition: max(currentHourPos, currentMinutePos))
+            rollDiceInRecalibrate(max: max(2, action.diceMax))
         } else {
-            isMorseMode = false
             exitRecalibrateAndSyncTime()
-            isRecalibrateActive = false
             executeAction(action)
         }
     }
 
     /// 모스모드를 액션 실행 없이 단순 종료 (recalibrate 해제 + 시간 복귀)
+    /// commitAndExecuteMorse가 cancelInflight 후 충분히 대기하므로 즉시 호출 가능.
     private func finalizeMorseExit() {
         isMorseMode = false
         feedbackQueue.removeAll()
-        // 진행 중인 피드백이 끝날 때까지 잠시 대기 후 종료 (피드백 중단 시 바늘이 어색하게 멈출 수 있음)
-        let delay: Double = isFeedbackPlaying ? 0.5 : 0.0
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            guard let self else { return }
-            self.exitRecalibrateAndSyncTime()
-            self.isRecalibrateActive = false
-        }
+        exitRecalibrateAndSyncTime()
     }
 
     /// recalibrate(false) 직전에 양 바늘을 0(12시)으로 복귀시킨 뒤 종료 + datetime 전송.
     /// 시침이 카운터 위치(N×5분)에 남은 채로 종료하면 펌웨어가 오프셋을 복원하지 못해
-    /// 시각 표시가 그만큼 틀어짐.
-    /// 분침은 forward wrap이므로 실제 이동 거리는 (60 - prevMinute) — 대기 시간 계산에 반영.
+    /// 시각 표시가 그만큼 틀어짐. 음수 delta 직진(반시계)으로 0 복귀.
     private func exitRecalibrateAndSyncTime() {
         let prevHour = currentHourPos
         let prevMinute = currentMinutePos
         moveHand(motor: 0, to: 0)
         moveHand(motor: 1, to: 0)
-        let hourDist = abs(prevHour)
-        let minuteDist = prevMinute == 0 ? 0 : (60 - prevMinute)
-        let travel = max(estimatedTravelTime(from: 0, to: hourDist),
-                         estimatedTravelTime(from: 0, to: minuteDist))
+        let travel = max(estimatedTravelTime(from: 0, to: prevHour),
+                         estimatedTravelTime(from: 0, to: prevMinute))
         DispatchQueue.main.asyncAfter(deadline: .now() + travel + 1.0) { [weak self] in
             guard let self else { return }
             self.bleManager?.sendCommand(name: "recalibrate", value: false)
+            self.isRecalibrateActive = false
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
                 self?.sendCurrentDatetime()
             }
@@ -530,45 +531,40 @@ final class ButtonActionManager: ObservableObject {
         }
     }
 
-    /// 바늘을 현재 위치에서 +delta 분 마크 만큼 시계방향으로 누적 이동 (mod 60).
-    /// `moveHand`의 절대 target 모드는 wrap 시 음수 delta를 보내 반시계 회전이 되므로,
-    /// 누적 모델용으로 별도 헬퍼 — 항상 양수 delta를 송신.
+    /// 현재 위치에서 ±delta 분 마크 누적 이동 (mod 60). 양수=시계방향, 음수=반시계.
     private func moveHandRelative(motor: Int, byMarks delta: Int) {
         guard delta != 0 else { return }
-        let scale = motor == 0 ? Self.stepsPerMinuteMarkHour : Self.stepsPerMinuteMarkMinute
-        let stepDelta = delta * scale
-        bleManager?.sendCommand(name: "recalibrate_move", value: [motor, stepDelta])
+        sendMove(motor: motor, marks: delta)
         let current = motor == 0 ? currentHourPos : currentMinutePos
         let next = ((current + delta) % 60 + 60) % 60
         if motor == 0 { currentHourPos = next } else { currentMinutePos = next }
     }
 
-    /// 인식 실패 시 분침 5↔10 짧은 흔들기 후 0으로 복귀.
+    /// 절대 target으로 시계방향(forward)만 이동. 룰렛 스핀처럼 항상 시계방향이어야 하는 경로용.
+    private func moveHandForward(motor: Int, to target: Int) {
+        let current = motor == 0 ? currentHourPos : currentMinutePos
+        let forward = ((target - current) % 60 + 60) % 60
+        if forward != 0 {
+            moveHandRelative(motor: motor, byMarks: forward)
+        }
+    }
+
+    /// 인식 실패 시 분침을 누적 위치 주변에서 흔들고 원위치 복귀. ±5 / -10 / +5 → net 0.
     private func shakeForError() {
         guard isRecalibrateActive else { return }
-        moveHand(motor: 1, to: 5)
+        moveHandRelative(motor: 1, byMarks: 5)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
-            self?.moveHand(motor: 1, to: 10)
+            self?.moveHandRelative(motor: 1, byMarks: -10)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
-                self?.moveHand(motor: 1, to: 0)
+                self?.moveHandRelative(motor: 1, byMarks: 5)
             }
         }
     }
 
     // MARK: - Hand Movement
 
-    private func moveHands(to position: Int) {
-        bleManager?.sendCommand(name: "stepper_goto", value: [0, position])
-        bleManager?.sendCommand(name: "stepper_goto", value: [1, position])
-    }
-
-    /// 두 바늘 이동 후 시계가 수신 확인하면 콜백 호출
-    private func moveHandsAndWait(hour: Int, minute: Int, onAcknowledged: @escaping () -> Void) {
-        bleManager?.sendCommand(name: "stepper_goto", value: [0, hour])
-        bleManager?.sendCommand(name: "stepper_goto", value: [1, minute], onComplete: onAcknowledged)
-    }
-
-    /// 바늘 이동에 필요한 예상 시간 (위치 간 거리 기반, 최소 1초)
+    /// 바늘 이동에 필요한 예상 시간 (마크 단위 거리 기반, 최소 1초).
+    /// 음수 delta 직진 회전이므로 abs(to - from)이 곧 회전 마크 수.
     private func estimatedTravelTime(from: Int, to: Int) -> Double {
         let distance = abs(to - from)
         return max(1.0, Double(distance) * 0.06)
@@ -585,7 +581,8 @@ final class ButtonActionManager: ObservableObject {
     }
 
     /// 버튼 직접 매핑 경로 — recalibrate 진입부터 시작.
-    /// 시작 위치 불명(현재 시각 어디든) → 보수적으로 30 스텝 거리 가정.
+    /// 펌웨어가 진입 시 바늘을 0으로 자동 이동 → onComplete 후 추적값 0으로 동기화.
+    /// 시작 위치 불명(현재 시각 어디든) → 보수적으로 2초 대기.
     private func rollRandomDice(max: Int) {
         guard !isDiceRolling else {
             bleManager?.log("주사위 중복 실행 무시")
@@ -596,28 +593,29 @@ final class ButtonActionManager: ObservableObject {
             return
         }
         isDiceRolling = true
-        // recalibrate(true) → 진입 시 펌웨어가 바늘을 0으로 이동.
-        bleManager?.sendCommand(name: "recalibrate", value: true)
-        // 명시적 stepper_goto(0) 보강 — 재진입 포함 어떤 상태에서도 12시로 확정.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-            self?.bleManager?.sendCommand(name: "stepper_goto", value: [0, 0])
-            self?.bleManager?.sendCommand(name: "stepper_goto", value: [1, 0])
-        }
-        // 시작 위치 보수적 추정: 30 스텝 * 0.06 = 1.8s → 2초
-        startDiceRoll(travelToZero: 2.0, max: max)
+        bleManager?.sendCommand(name: "recalibrate", value: true, onComplete: { [weak self] in
+            guard let self else { return }
+            self.isRecalibrateActive = true
+            self.currentHourPos = 0
+            self.currentMinutePos = 0
+            self.startDiceRoll(travelToZero: 2.0, max: max)
+        })
     }
 
-    /// 확장입력모드 경로 — recalibrate 이미 활성, 바늘이 value 위치에 있음.
-    private func rollDiceInRecalibrate(max: Int, fromPosition: Int) {
+    /// 모스 경로 — recalibrate 이미 활성, 바늘이 (currentHourPos, currentMinutePos)에 있음.
+    /// 음수 delta로 0 복귀 후 스핀.
+    private func rollDiceInRecalibrate(max: Int) {
         guard !isDiceRolling else {
             bleManager?.log("주사위 중복 실행 무시")
             return
         }
         isDiceRolling = true
-        // 이미 recalibrate 모드 — 재발행만으론 바늘이 이동 안 함. 명시적 stepper_goto(0) 필요.
-        bleManager?.sendCommand(name: "stepper_goto", value: [0, 0])
-        bleManager?.sendCommand(name: "stepper_goto", value: [1, 0])
-        let travel = estimatedTravelTime(from: fromPosition, to: 0)
+        let prevHour = currentHourPos
+        let prevMinute = currentMinutePos
+        moveHand(motor: 0, to: 0)
+        moveHand(motor: 1, to: 0)
+        let travel = Swift.max(estimatedTravelTime(from: 0, to: prevHour),
+                               estimatedTravelTime(from: 0, to: prevMinute))
         startDiceRoll(travelToZero: travel, max: max)
     }
 
@@ -657,8 +655,9 @@ final class ButtonActionManager: ObservableObject {
             let position = hourMarkPosition(face)
 
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                // 분침(motor 1)만 이동 — 시침은 인트로에서 12시로 정렬된 상태 유지
-                self?.bleManager?.sendCommand(name: "stepper_goto", value: [1, position])
+                // 분침(motor 1)만 시계방향 누적 이동 — 시침은 인트로에서 12시로 정렬된 상태 유지.
+                // 룰렛은 항상 forward이므로 wrap 거리로 송신 (예: 50→5는 +15마크).
+                self?.moveHandForward(motor: 1, to: position)
             }
             delay += interval
         }
@@ -740,19 +739,19 @@ final class ButtonActionManager: ObservableObject {
         }
     }
 
-    /// 확장입력모드에서 호출 — recalibrate 유지한 채 바로 이동
-    private func executeDisplayAction(_ action: ButtonAction, fromPosition: Int) {
+    /// recalibrate 활성 상태에서 표시 액션 실행 → 일정 시간 후 종료.
+    /// 호출 전 currentHourPos·currentMinutePos가 실제 바늘 위치와 동기화되어 있어야 함.
+    private func executeDisplayAction(_ action: ButtonAction) {
         let (hourPos, minutePos) = displayPositions(for: action)
         displayLogMessage(for: action, hourPos: hourPos, minutePos: minutePos)
-
-        moveHandsAndWait(hour: hourPos, minute: minutePos) { [weak self] in
-            guard let self else { return }
-            let maxDistance = max(abs(hourPos - fromPosition), abs(minutePos - fromPosition))
-            let travelTime = self.estimatedTravelTime(from: 0, to: maxDistance)
-
-            DispatchQueue.main.asyncAfter(deadline: .now() + travelTime + 3.0) { [weak self] in
-                self?.exitRecalibrateAndSyncTime()
-            }
+        let prevHour = currentHourPos
+        let prevMinute = currentMinutePos
+        moveHand(motor: 0, to: hourPos)
+        moveHand(motor: 1, to: minutePos)
+        let travelTime = max(estimatedTravelTime(from: prevHour, to: hourPos),
+                             estimatedTravelTime(from: prevMinute, to: minutePos))
+        DispatchQueue.main.asyncAfter(deadline: .now() + travelTime + 3.0) { [weak self] in
+            self?.exitRecalibrateAndSyncTime()
         }
     }
 
@@ -763,25 +762,16 @@ final class ButtonActionManager: ObservableObject {
 
     private func showDisplayOnWatch(_ type: ButtonActionType) {
         let action = ButtonAction(type: type)
-        let (hourPos, minutePos) = displayPositions(for: action)
 
-        // recalibrate(true) → 시계 수신 확인 후 0시 이동 대기 → stepper_goto
+        // recalibrate(true) → onComplete 후 펌웨어가 0시로 이동하는 시간 대기 → 추적값 0 동기화 → 표시.
         bleManager?.sendCommand(name: "recalibrate", value: true, onComplete: { [weak self] in
             guard let self else { return }
-            // 펌웨어가 0시로 이동하는 시간 대기
+            self.isRecalibrateActive = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
                 guard let self else { return }
-                self.displayLogMessage(for: action, hourPos: hourPos, minutePos: minutePos)
-
-                self.moveHandsAndWait(hour: hourPos, minute: minutePos) { [weak self] in
-                    guard let self else { return }
-                    let maxPos = max(hourPos, minutePos)
-                    let travelTime = self.estimatedTravelTime(from: 0, to: maxPos)
-
-                    DispatchQueue.main.asyncAfter(deadline: .now() + travelTime + 3.0) { [weak self] in
-                        self?.exitRecalibrateAndSyncTime()
-                    }
-                }
+                self.currentHourPos = 0
+                self.currentMinutePos = 0
+                self.executeDisplayAction(action)
             }
         })
     }
