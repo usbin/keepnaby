@@ -70,6 +70,11 @@ struct ConnectionView: View {
                         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
                 }
 
+                // 모스모드 진행 인디케이터
+                if actionManager.isMorseMode {
+                    morseModeIndicator
+                }
+
                 if ble.connectionState == .connected {
                     ScrollView {
                         VStack(spacing: 16) {
@@ -282,6 +287,40 @@ struct ConnectionView: View {
     }
 
     // MARK: - Helpers
+
+    private var morseModeIndicator: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "dot.radiowaves.right")
+                    .foregroundStyle(.orange)
+                Text("모스 입력 중")
+                    .font(.caption.bold())
+                    .foregroundStyle(.orange)
+                Spacer()
+            }
+            HStack(alignment: .firstTextBaseline) {
+                Text("누적:")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(actionManager.morseCommandBuffer.isEmpty ? "—" : actionManager.morseCommandBuffer)
+                    .font(.system(.body, design: .monospaced))
+                    .bold()
+            }
+            HStack(alignment: .firstTextBaseline) {
+                Text("현재:")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(actionManager.morseSymbolBuffer.isEmpty
+                     ? "—"
+                     : actionManager.morseSymbolBuffer.map { $0 == .dot ? "·" : "−" }.joined(separator: " "))
+                    .font(.system(.body, design: .monospaced))
+                    .foregroundStyle(.orange)
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+    }
 
     @ViewBuilder
     private func menuButton(_ title: String, icon: String, action: @escaping () -> Void) -> some View {

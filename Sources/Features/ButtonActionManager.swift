@@ -102,10 +102,19 @@ final class ButtonActionManager: ObservableObject {
     @Published var mappings: [String: ButtonAction] = [:]
     @Published var iftttKey: String = ""
 
-    // 확장입력모드 (0~15)
-    @Published var extendedMappings: [ButtonAction] = Array(repeating: ButtonAction(), count: 16)
-    @Published var isExtendedMode = false
-    @Published var extendedBits: [Int] = []  // 입력 중인 비트
+    // 모스부호 입력 모드
+    @Published var morseMappings: [String: ButtonAction] = [:]
+    @Published var isMorseMode = false
+    @Published var morseSymbolBuffer: [MorseSymbol] = []   // 현재 입력 중인 한 문자의 점/대시
+    @Published var morseCommandBuffer: String = ""          // 확정된 문자들의 누적 문자열
+
+    // 피드백 큐 (한 문자 확정 시마다 enqueue)
+    private var feedbackQueue: [(symbols: [MorseSymbol], counterIndex: Int)] = []
+    private var isFeedbackPlaying = false
+    /// 마지막으로 표시된 카운터 위치 (분침, 시침). 다음 심볼 재생 시 0:0 정렬 시작점.
+    private var lastCounterHands: (hour: Int, minute: Int) = (0, 0)
+    /// 모스모드 중 펌웨어가 recalibrate 모드 상태인지
+    private var isRecalibrateActive = false
 
     let findMyPhone = FindMyPhone()
     @Published var isFindMyPhonePlaying = false
@@ -116,7 +125,7 @@ final class ButtonActionManager: ObservableObject {
 
     private static let mappingsKey = "button_mappings"
     private static let iftttKeyKey = "ifttt_webhook_key"
-    private static let extendedKey = "extended_mappings"
+    private static let morseKey = "morse_mappings"
 
     // 상단 전체 + 하단 1회/2회/3회/4회 (길게 누름 제외)
     static let allButtons: [ButtonKey] = {
@@ -147,19 +156,19 @@ final class ButtonActionManager: ObservableObject {
     // MARK: - Execute
 
     func handleButtonEvent(button: Int, event: Int) {
-        // 하단 길게 누름 → 확장입력모드 진입 또는 취소
+        // 하단 길게 누름 → 모스모드 진입 또는 종료(명령 실행)
         if button == 2 && event == 2 {
-            if isExtendedMode {
-                cancelExtendedMode()
+            if isMorseMode {
+                commitAndExecuteMorse()
             } else {
-                startExtendedMode()
+                startMorseMode()
             }
             return
         }
 
-        // 확장입력모드 중 — 하단 버튼만 입력 받음
-        if isExtendedMode && button == 2 {
-            handleExtendedInput(event: event)
+        // 모스모드 중 — 정의된 제스처만 처리
+        if isMorseMode {
+            handleMorseInput(button: button, event: event)
             return
         }
 
@@ -217,27 +226,149 @@ final class ButtonActionManager: ObservableObject {
         isFindMyPhonePlaying = false
     }
 
-    // MARK: - Extended Input Mode (16종)
+    // MARK: - Morse Input Mode
 
-    private func cancelExtendedMode() {
-        isExtendedMode = false
-        extendedBits = []
-        // 진동 3회 — 취소
-        bleManager?.sendCommand(name: "vibrator_start", value: [150, 100, 150, 100, 150])
-        // 캘리브레이션 모드 종료 → datetime 복귀
-        exitRecalibrateAndSyncTime()
-        bleManager?.log("확장입력모드 취소")
+    private func startMorseMode() {
+        isMorseMode = true
+        morseSymbolBuffer = []
+        morseCommandBuffer = ""
+        feedbackQueue.removeAll()
+        isFeedbackPlaying = false
+        lastCounterHands = (0, 0)
+        // 진동 1회 — 시작
+        bleManager?.sendCommand(name: "vibrator_start", value: [150])
+        // 캘리브레이션 진입 → 펌웨어가 바늘을 0(12시)으로 자동 이동
+        bleManager?.sendCommand(name: "recalibrate", value: true)
+        isRecalibrateActive = true
+        bleManager?.log("모스모드 시작 → 0시 (recalibrate)")
     }
 
-    private func startExtendedMode() {
-        isExtendedMode = true
-        extendedBits = []
-        // 진동 1회
-        bleManager?.sendCommand(name: "vibrator_start", value: [150])
-        // 캘리브레이션 모드 진입 → 펌웨어가 바늘을 0(12시)으로 자동 이동
-        // 입력 완료 후 명령 번호 위치로 바로 이동 (11시 단계 생략)
-        bleManager?.sendCommand(name: "recalibrate", value: true)
-        bleManager?.log("확장입력모드 시작 → 0시 (recalibrate)")
+    private func handleMorseInput(button: Int, event: Int) {
+        switch (button, event) {
+        case (2, 1):  // 하단 1회 → 점
+            appendMorseSymbol(.dot)
+        case (2, 3):  // 하단 2회 → 대시
+            appendMorseSymbol(.dash)
+        case (0, 1):  // 상단 1회 → 한 문자 확정
+            confirmMorseChar()
+        case (0, 2):  // 상단 길게 → 점진적 취소
+            cancelCurrentSymbol()
+        default:
+            // 그 외 입력은 모스모드 중엔 무시
+            bleManager?.log("모스모드: 무시된 입력 (button=\(button), event=\(event))")
+        }
+    }
+
+    private func appendMorseSymbol(_ symbol: MorseSymbol) {
+        morseSymbolBuffer.append(symbol)
+        bleManager?.log("모스 심볼: \(MorseDecoder.symbolString(morseSymbolBuffer))")
+    }
+
+    private func confirmMorseChar() {
+        guard !morseSymbolBuffer.isEmpty else {
+            bleManager?.log("모스: 빈 심볼 버퍼 — 확정 무시")
+            return
+        }
+
+        let symbols = morseSymbolBuffer
+        morseSymbolBuffer.removeAll()
+
+        guard let char = MorseDecoder.decode(symbols) else {
+            // 인식 실패: 진동 2회 + 분침 흔들기
+            bleManager?.sendCommand(name: "vibrator_start", value: [100, 80, 100])
+            bleManager?.log("모스 인식 실패: \(MorseDecoder.symbolString(symbols))")
+            shakeForError()
+            return
+        }
+
+        morseCommandBuffer.append(char)
+        bleManager?.log("모스 문자 확정: \(char) (\(MorseDecoder.symbolString(symbols))) → 누적 \"\(morseCommandBuffer)\"")
+        enqueueFeedback(symbols: symbols, counterIndex: morseCommandBuffer.count)
+    }
+
+    private func cancelCurrentSymbol() {
+        if !morseSymbolBuffer.isEmpty {
+            morseSymbolBuffer.removeAll()
+            bleManager?.sendCommand(name: "vibrator_start", value: [100])
+            bleManager?.log("모스 1차 취소: 현재 심볼 버퍼 삭제")
+        } else if !morseCommandBuffer.isEmpty {
+            morseCommandBuffer.removeAll()
+            bleManager?.sendCommand(name: "vibrator_start", value: [100, 80, 100])
+            bleManager?.log("모스 2차 취소: commandBuffer 전체 삭제")
+            // 카운터 바늘 0으로 리셋 (피드백 큐는 그대로 두되, 즉시 시각 리셋)
+            enqueueCounterReset()
+        }
+        // 둘 다 비어있으면 무시
+    }
+
+    private func commitAndExecuteMorse() {
+        let key = morseCommandBuffer.uppercased()
+        morseSymbolBuffer.removeAll()
+        morseCommandBuffer.removeAll()
+        // 진행 중이던 피드백 큐는 모두 폐기 (현재 재생 항목은 자연스럽게 끝나도록 둔다)
+        feedbackQueue.removeAll()
+
+        // 피드백이 재생 중이면 끝날 때까지 잠깐 기다린 뒤 실행
+        let delay: Double = isFeedbackPlaying ? 0.6 : 0.0
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self else { return }
+            self.runMorseExecution(key: key)
+        }
+    }
+
+    private func runMorseExecution(key: String) {
+        if key.isEmpty {
+            // 빈 버퍼 종료 — 단순 취소
+            bleManager?.sendCommand(name: "vibrator_start", value: [100])
+            bleManager?.log("모스모드 종료: 빈 버퍼")
+            finalizeMorseExit()
+            return
+        }
+
+        let action = morseMappings[key] ?? ButtonAction()
+        if action.type == .none {
+            // 미등록 명령
+            bleManager?.sendCommand(name: "vibrator_start", value: [200, 100, 200, 100, 200])
+            historyManager?.record(trigger: "모스 [\(key)]", actionName: "미등록")
+            bleManager?.log("모스 명령 미등록: [\(key)]")
+            finalizeMorseExit()
+            return
+        }
+
+        // 등록된 명령 실행
+        bleManager?.sendCommand(name: "vibrator_start", value: [150, 100, 150])
+        historyManager?.record(trigger: "모스 [\(key)]", actionName: action.summary)
+        bleManager?.log("모스 명령 실행: [\(key)] → \(action.type.displayName)")
+
+        // 표시 액션은 recalibrate 유지한 채 실행, 그 외는 종료 후 실행
+        if action.type == .showDate || action.type == .showBattery || action.type == .showSteps {
+            isMorseMode = false
+            isRecalibrateActive = false
+            executeDisplayAction(action, fromPosition: max(lastCounterHands.hour, lastCounterHands.minute))
+        } else if action.type == .randomDice {
+            isMorseMode = false
+            isRecalibrateActive = false
+            rollDiceInRecalibrate(max: max(2, action.diceMax), fromPosition: max(lastCounterHands.hour, lastCounterHands.minute))
+        } else {
+            isMorseMode = false
+            exitRecalibrateAndSyncTime()
+            isRecalibrateActive = false
+            executeAction(action)
+        }
+    }
+
+    /// 모스모드를 액션 실행 없이 단순 종료 (recalibrate 해제 + 시간 복귀)
+    private func finalizeMorseExit() {
+        isMorseMode = false
+        feedbackQueue.removeAll()
+        // 진행 중인 피드백이 끝날 때까지 잠시 대기 후 종료 (피드백 중단 시 바늘이 어색하게 멈출 수 있음)
+        let delay: Double = isFeedbackPlaying ? 0.5 : 0.0
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self else { return }
+            self.exitRecalibrateAndSyncTime()
+            self.isRecalibrateActive = false
+        }
     }
 
     /// recalibrate(false) 후 datetime 전송 — 공식 앱과 동일한 플로우
@@ -248,27 +379,121 @@ final class ButtonActionManager: ObservableObject {
         }
     }
 
-    private func handleExtendedInput(event: Int) {
-        let bit: Int
-        switch event {
-        case 1: bit = 0
-        case 3: bit = 1
-        default: return
+    // MARK: - Morse Feedback Queue
+
+    private func enqueueFeedback(symbols: [MorseSymbol], counterIndex: Int) {
+        feedbackQueue.append((symbols, counterIndex))
+        if !isFeedbackPlaying { drainFeedbackQueue() }
+    }
+
+    /// 카운터만 0으로 리셋하는 특수 큐 항목 (취소 시 사용)
+    private func enqueueCounterReset() {
+        feedbackQueue.append(([], 0))
+        if !isFeedbackPlaying { drainFeedbackQueue() }
+    }
+
+    private func drainFeedbackQueue() {
+        guard !feedbackQueue.isEmpty else {
+            isFeedbackPlaying = false
+            return
         }
+        isFeedbackPlaying = true
+        let item = feedbackQueue.removeFirst()
+        playFeedback(symbols: item.symbols, counterIndex: item.counterIndex) { [weak self] in
+            self?.drainFeedbackQueue()
+        }
+    }
 
-        extendedBits.append(bit)
-        bleManager?.log("확장입력: bit \(extendedBits.count)/4 = \(bit)")
+    /// 한 문자 피드백 시퀀스: [정렬→0:0] → [심볼 재생] → [문자 종료 신호] → [카운터 표시]
+    private func playFeedback(symbols: [MorseSymbol], counterIndex: Int, onComplete: @escaping () -> Void) {
+        // Step 0: 정렬 — 분침/시침 모두 0으로 (이전 카운터에서 복귀)
+        let alignTravel = max(
+            estimatedTravelTime(from: lastCounterHands.minute, to: 0),
+            estimatedTravelTime(from: lastCounterHands.hour, to: 0)
+        )
+        bleManager?.sendCommand(name: "stepper_goto", value: [1, 0])  // 분침 → 0
+        bleManager?.sendCommand(name: "stepper_goto", value: [0, 0])  // 시침 → 0
 
-        if extendedBits.count >= 4 {
-            let value = extendedBits[0] * 8 + extendedBits[1] * 4 + extendedBits[2] * 2 + extendedBits[3]
-            // 진동 2회
-            bleManager?.sendCommand(name: "vibrator_start", value: [150, 100, 150])
-            bleManager?.log("확장입력 완료: \(extendedBits) = \(value)")
+        DispatchQueue.main.asyncAfter(deadline: .now() + alignTravel + 0.2) { [weak self] in
+            guard let self else { return }
+            // 심볼 시퀀스 (빈 시퀀스면 카운터만 표시)
+            self.playSymbolSequence(symbols: symbols, index: 0, currentMinute: 0) { [weak self] lastMinutePos in
+                guard let self else { return }
+                // 문자 종료 신호: 시침을 분침의 마지막 위치로 합류 (lastMinutePos == 0 인 경우 = 빈 시퀀스 → 카운터만)
+                let afterEndSignal: () -> Void = { [weak self] in
+                    guard let self else { return }
+                    self.showCounter(index: counterIndex, fromMinute: lastMinutePos, fromHour: lastMinutePos > 0 ? lastMinutePos : 0, onComplete: onComplete)
+                }
 
-            // 바늘 이동: 55분(현재) → 최종 위치, 3초 유지 후 복귀
-            isExtendedMode = false
-            extendedBits = []
-            showExtendedValue(value)
+                if lastMinutePos > 0 {
+                    self.bleManager?.sendCommand(name: "stepper_goto", value: [0, lastMinutePos])
+                    let travel = self.estimatedTravelTime(from: 0, to: lastMinutePos)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + travel + 0.4, execute: afterEndSignal)
+                } else {
+                    afterEndSignal()
+                }
+            }
+        }
+    }
+
+    /// 심볼 하나씩 분침으로 재생. 마지막 심볼은 0으로 안 돌리고 위치 유지.
+    /// onComplete의 인자: 마지막 심볼의 분침 위치 (0이면 빈 시퀀스)
+    private func playSymbolSequence(symbols: [MorseSymbol], index: Int, currentMinute: Int, onComplete: @escaping (Int) -> Void) {
+        guard index < symbols.count else {
+            onComplete(currentMinute)
+            return
+        }
+        let symbol = symbols[index]
+        let target = symbol == .dot ? 5 : 10
+        let isLast = (index == symbols.count - 1)
+
+        bleManager?.sendCommand(name: "stepper_goto", value: [1, target])
+        let travel = estimatedTravelTime(from: currentMinute, to: target)
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + travel + 0.25) { [weak self] in
+            guard let self else { return }
+            if isLast {
+                onComplete(target)
+            } else {
+                // 0으로 복귀 후 다음 심볼
+                self.bleManager?.sendCommand(name: "stepper_goto", value: [1, 0])
+                let backTravel = self.estimatedTravelTime(from: target, to: 0)
+                DispatchQueue.main.asyncAfter(deadline: .now() + backTravel + 0.15) { [weak self] in
+                    self?.playSymbolSequence(symbols: symbols, index: index + 1, currentMinute: 0, onComplete: onComplete)
+                }
+            }
+        }
+    }
+
+    /// 카운터 표시: 분침=(N%12)*5, 시침=(N/12)*5. N=0이면 0:0.
+    private func showCounter(index: Int, fromMinute: Int, fromHour: Int, onComplete: @escaping () -> Void) {
+        let minutePos = (index % 12) * 5
+        let hourPos = (index / 12) * 5
+
+        bleManager?.sendCommand(name: "stepper_goto", value: [1, minutePos])
+        bleManager?.sendCommand(name: "stepper_goto", value: [0, hourPos])
+        let travel = max(
+            estimatedTravelTime(from: fromMinute, to: minutePos),
+            estimatedTravelTime(from: fromHour, to: hourPos)
+        )
+        lastCounterHands = (hour: hourPos, minute: minutePos)
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + travel + 0.3) {
+            onComplete()
+        }
+    }
+
+    /// 인식 실패 시 분침 5↔10 짧은 흔들기 후 0으로 복귀.
+    private func shakeForError() {
+        guard isRecalibrateActive else { return }
+        bleManager?.sendCommand(name: "stepper_goto", value: [1, 5])
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+            self?.bleManager?.sendCommand(name: "stepper_goto", value: [1, 10])
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                guard let self else { return }
+                // 카운터 위치로 복귀 (현재 commandBuffer 상태)
+                self.bleManager?.sendCommand(name: "stepper_goto", value: [1, self.lastCounterHands.minute])
+            }
         }
     }
 
@@ -289,51 +514,6 @@ final class ButtonActionManager: ObservableObject {
     private func estimatedTravelTime(from: Int, to: Int) -> Double {
         let distance = abs(to - from)
         return max(1.0, Double(distance) * 0.06)
-    }
-
-    /// 0분 → 최종 위치 이동, 유지 후 액션 실행
-    private func showExtendedValue(_ value: Int) {
-        // 0분에서 명령 번호 위치로 이동 — 시계 수신 확인 후 타이머 시작
-        moveHandsAndWait(hour: value, minute: value) { [weak self] in
-            guard let self else { return }
-            self.bleManager?.log("확장입력 바늘 → \(value)분 (수신 확인)")
-
-            let travelTime = self.estimatedTravelTime(from: 0, to: value)
-
-            DispatchQueue.main.asyncAfter(deadline: .now() + travelTime + 1.5) { [weak self] in
-                guard let self else { return }
-
-                guard value < self.extendedMappings.count else {
-                    self.exitRecalibrateAndSyncTime()
-                    return
-                }
-                let action = self.extendedMappings[value]
-                let binary = String(value, radix: 2)
-                let padded = String(repeating: "0", count: max(0, 4 - binary.count)) + binary
-                self.historyManager?.record(
-                    trigger: "확장입력 \(value) (\(padded))",
-                    actionName: action.summary
-                )
-                guard action.type != .none else {
-                    self.exitRecalibrateAndSyncTime()
-                    return
-                }
-
-                self.bleManager?.log("확장입력 실행: [\(value)] \(action.type.displayName)")
-
-                // 바늘 표시 액션: recalibrate 유지한 채 바로 이동
-                if action.type == .showDate || action.type == .showBattery || action.type == .showSteps {
-                    self.executeDisplayAction(action, fromPosition: value)
-                } else if action.type == .randomDice {
-                    // recalibrate 유지 — 값 표시 위치에서 12시로 이동 후 주사위 시작
-                    self.rollDiceInRecalibrate(max: Swift.max(2, action.diceMax), fromPosition: value)
-                } else {
-                    // 일반 액션: recalibrate 종료 후 실행
-                    self.exitRecalibrateAndSyncTime()
-                    self.executeAction(action)
-                }
-            }
-        }
     }
 
     // MARK: - Random Dice
@@ -587,8 +767,8 @@ final class ButtonActionManager: ObservableObject {
             UserDefaults.standard.set(data, forKey: Self.mappingsKey)
         }
         UserDefaults.standard.set(iftttKey, forKey: Self.iftttKeyKey)
-        if let data = try? JSONEncoder().encode(extendedMappings) {
-            UserDefaults.standard.set(data, forKey: Self.extendedKey)
+        if let data = try? JSONEncoder().encode(morseMappings) {
+            UserDefaults.standard.set(data, forKey: Self.morseKey)
         }
     }
 
@@ -598,15 +778,15 @@ final class ButtonActionManager: ObservableObject {
             mappings = decoded
         }
         iftttKey = UserDefaults.standard.string(forKey: Self.iftttKeyKey) ?? ""
-        if let data = UserDefaults.standard.data(forKey: Self.extendedKey),
-           let decoded = try? JSONDecoder().decode([ButtonAction].self, from: data) {
-            extendedMappings = decoded
+        if let data = UserDefaults.standard.data(forKey: Self.morseKey),
+           let decoded = try? JSONDecoder().decode([String: ButtonAction].self, from: data) {
+            morseMappings = decoded
         }
     }
 
-    func saveExtended() {
-        if let data = try? JSONEncoder().encode(extendedMappings) {
-            UserDefaults.standard.set(data, forKey: Self.extendedKey)
+    func saveMorse() {
+        if let data = try? JSONEncoder().encode(morseMappings) {
+            UserDefaults.standard.set(data, forKey: Self.morseKey)
         }
     }
 }

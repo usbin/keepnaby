@@ -3,7 +3,8 @@ import SwiftUI
 struct ButtonMappingView: View {
     @EnvironmentObject var actionManager: ButtonActionManager
     @State private var editingKey: ButtonKey?
-    @State private var editingExtendedIndex: Int?
+    @State private var addingMorse = false
+    @State private var editingMorseKey: String?
 
     var body: some View {
         NavigationStack {
@@ -21,62 +22,68 @@ struct ButtonMappingView: View {
                 }
 
                 // Top button
-                Section("상단 버튼") {
+                Section {
                     ForEach(ButtonActionManager.allButtons.filter { $0.button == 0 }, id: \.storageKey) { key in
                         buttonRow(key: key)
                     }
+                } header: {
+                    Text("상단 버튼")
+                } footer: {
+                    Text("모스모드 중 길게 누름 → 점진적 취소 (등록된 일반 동작은 무시됨)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
 
                 // Bottom button
-                Section("하단 버튼") {
+                Section {
                     ForEach(ButtonActionManager.allButtons.filter { $0.button == 2 }, id: \.storageKey) { key in
                         buttonRow(key: key)
                     }
-                    // 하단 길게 누름 — 확장입력모드 (고정)
                     HStack {
                         Text("길게 누름")
                         Spacer()
-                        Text("확장입력모드 (고정)")
+                        Text("모스 입력모드 (고정)")
                             .foregroundStyle(.orange)
+                            .font(.caption)
                     }
+                } header: {
+                    Text("하단 버튼")
                 }
 
-                // 확장입력모드 위치기록 안내
                 Section {
                     Text("위치 기록 사용 시: 설정 → 개인정보 보호 및 보안 → 위치 서비스 → Keepnaby → '항상'으로 변경해주세요.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
 
-                // 확장입력모드 할당 (0~15)
-                Section("확장입력모드 할당 (0~15)") {
-                    Text("하단 길게 → 진동 1회 → 하단 1회=0, 2회=1\n4자리 입력 → 진동 2회 → 명령 실행")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                // 모스부호 명령 매핑
+                Section {
+                    Text("""
+                    하단 길게 → 모스모드 시작
+                    하단 1회=·(점)  하단 2회=−(대시)
+                    상단 1회 → 한 문자 확정
+                    상단 길게 → 점진적 취소 (1차: 현재 문자, 2차: 전체)
+                    하단 길게(다시) → 명령 실행 / 종료
+                    """)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
 
-                    ForEach(0..<16, id: \.self) { index in
-                        let action = actionManager.extendedMappings[index]
-                        let binary = String(index, radix: 2).leftPadded(to: 4)
-                        Button {
-                            editingExtendedIndex = index
-                        } label: {
-                            HStack {
-                                Text("\(index)")
-                                    .font(.system(.body, design: .monospaced))
-                                    .frame(width: 25, alignment: .trailing)
-                                Text("(\(binary))")
-                                    .font(.system(.caption, design: .monospaced))
-                                    .foregroundStyle(.secondary)
-                                    .frame(width: 50)
-                                Spacer()
-                                Text(actionSummary(action))
-                                    .foregroundStyle(.secondary)
-                                Image(systemName: "chevron.right")
-                                    .font(.caption)
-                                    .foregroundStyle(.tertiary)
-                            }
-                        }
-                        .foregroundStyle(.primary)
+                    ForEach(actionManager.morseMappings.keys.sorted(), id: \.self) { key in
+                        morseRow(key: key)
+                    }
+
+                    Button {
+                        addingMorse = true
+                    } label: {
+                        Label("명령 추가", systemImage: "plus.circle")
+                    }
+                } header: {
+                    Text("모스부호 명령 매핑")
+                } footer: {
+                    if actionManager.morseMappings.isEmpty {
+                        Text("등록된 명령이 없습니다. 추가해 주세요.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
@@ -86,8 +93,12 @@ struct ButtonMappingView: View {
                 ActionEditView(key: key)
                     .environmentObject(actionManager)
             }
-            .sheet(item: $editingExtendedIndex) { index in
-                ExtendedActionEditView(index: index)
+            .sheet(isPresented: $addingMorse) {
+                MorseMappingEditView(originalKey: nil)
+                    .environmentObject(actionManager)
+            }
+            .sheet(item: $editingMorseKey) { key in
+                MorseMappingEditView(originalKey: key)
                     .environmentObject(actionManager)
             }
         }
@@ -101,7 +112,7 @@ struct ButtonMappingView: View {
             HStack {
                 Text(key.displayEvent)
                 Spacer()
-                Text(actionSummary(action))
+                Text(action.summary)
                     .foregroundStyle(.secondary)
                 Image(systemName: "chevron.right")
                     .font(.caption)
@@ -111,8 +122,28 @@ struct ButtonMappingView: View {
         .foregroundStyle(.primary)
     }
 
-    private func actionSummary(_ action: ButtonAction) -> String {
-        action.summary
+    private func morseRow(key: String) -> some View {
+        let action = actionManager.morseMappings[key] ?? ButtonAction()
+        return Button {
+            editingMorseKey = key
+        } label: {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(key)
+                        .font(.system(.body, design: .monospaced))
+                    Text(MorseDecoder.encodeString(key))
+                        .font(.system(.caption2, design: .monospaced))
+                        .foregroundStyle(.orange)
+                }
+                Spacer()
+                Text(action.summary)
+                    .foregroundStyle(.secondary)
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .foregroundStyle(.primary)
     }
 }
 
@@ -120,14 +151,8 @@ extension ButtonKey: Identifiable {
     var id: String { storageKey }
 }
 
-extension Int: @retroactive Identifiable {
-    public var id: Int { self }
-}
-
-extension String {
-    func leftPadded(to length: Int, with char: Character = "0") -> String {
-        String(repeating: char, count: max(0, length - count)) + self
-    }
+extension String: @retroactive Identifiable {
+    public var id: String { self }
 }
 
 // MARK: - Action Edit (일반 버튼)
@@ -157,40 +182,6 @@ struct ActionEditView: View {
             )
             .onAppear {
                 action = actionManager.getAction(for: key)
-            }
-        }
-    }
-}
-
-// MARK: - Action Edit (확장입력모드)
-
-struct ExtendedActionEditView: View {
-    let index: Int
-    @EnvironmentObject var actionManager: ButtonActionManager
-    @Environment(\.dismiss) var dismiss
-    @State private var action: ButtonAction = ButtonAction()
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                let binary = String(index, radix: 2).leftPadded(to: 4)
-                Section("확장입력 \(index) (\(binary))") {
-                    actionPicker(selection: $action)
-                }
-                actionDetail(action: $action)
-            }
-            .navigationTitle("확장입력 \(index)")
-            .navigationBarTitleDisplayMode(.inline)
-            .navigationBarItems(
-                leading: Button("취소") { dismiss() },
-                trailing: Button("저장") {
-                    actionManager.extendedMappings[index] = action
-                    actionManager.saveExtended()
-                    dismiss()
-                }
-            )
-            .onAppear {
-                action = actionManager.extendedMappings[index]
             }
         }
     }

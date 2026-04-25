@@ -1,0 +1,109 @@
+import SwiftUI
+
+// MARK: - 모스 명령 편집
+
+struct MorseMappingEditView: View {
+    let originalKey: String?  // nil이면 새로 만드는 중
+    @EnvironmentObject var actionManager: ButtonActionManager
+    @Environment(\.dismiss) var dismiss
+
+    @State private var keyInput: String = ""
+    @State private var action: ButtonAction = ButtonAction()
+    @State private var showDuplicateAlert = false
+
+    private var normalizedKey: String {
+        keyInput
+            .uppercased()
+            .filter { $0.isLetter || $0.isNumber }
+    }
+
+    private var isValid: Bool {
+        !normalizedKey.isEmpty && action.type != .none
+    }
+
+    private var isDuplicate: Bool {
+        guard !normalizedKey.isEmpty else { return false }
+        // 편집 중인 키 자신과의 일치는 중복 아님
+        if let originalKey, originalKey == normalizedKey { return false }
+        return actionManager.morseMappings[normalizedKey] != nil
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("명령어") {
+                    TextField("예: SOS, A1, M2", text: $keyInput)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.characters)
+                        .onChange(of: keyInput) { _, newValue in
+                            // 영숫자만 + 자동 대문자
+                            let filtered = newValue.filter { $0.isLetter || $0.isNumber }
+                            let upper = filtered.uppercased()
+                            if upper != newValue { keyInput = upper }
+                        }
+
+                    if !normalizedKey.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("모스 부호")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text(MorseDecoder.encodeString(normalizedKey))
+                                .font(.system(.body, design: .monospaced))
+                                .foregroundStyle(.orange)
+                        }
+                    }
+
+                    if isDuplicate {
+                        Text("이미 등록된 명령어입니다.")
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+                }
+
+                Section("동작") {
+                    actionPicker(selection: $action)
+                }
+                actionDetail(action: $action)
+            }
+            .navigationTitle(originalKey == nil ? "모스 명령 추가" : "모스 명령 편집")
+            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarItems(
+                leading: Button("취소") { dismiss() },
+                trailing: Button("저장") {
+                    saveMapping()
+                }
+                .disabled(!isValid || isDuplicate)
+            )
+            .onAppear {
+                if let originalKey {
+                    keyInput = originalKey
+                    action = actionManager.morseMappings[originalKey] ?? ButtonAction()
+                }
+            }
+            .toolbar {
+                if originalKey != nil {
+                    ToolbarItem(placement: .bottomBar) {
+                        Button("삭제", role: .destructive) {
+                            if let originalKey {
+                                actionManager.morseMappings.removeValue(forKey: originalKey)
+                                actionManager.saveMorse()
+                            }
+                            dismiss()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func saveMapping() {
+        guard isValid, !isDuplicate else { return }
+        // 키 변경 시 기존 항목 삭제
+        if let originalKey, originalKey != normalizedKey {
+            actionManager.morseMappings.removeValue(forKey: originalKey)
+        }
+        actionManager.morseMappings[normalizedKey] = action
+        actionManager.saveMorse()
+        dismiss()
+    }
+}
