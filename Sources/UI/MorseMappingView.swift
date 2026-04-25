@@ -34,8 +34,7 @@ struct MorseMappingEditView: View {
                     TextField("예: SOS, A1, M2", text: $keyInput)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.characters)
-                        .onChange(of: keyInput) { _, newValue in
-                            // 영숫자만 + 자동 대문자
+                        .onChange(of: keyInput) { newValue in
                             let filtered = newValue.filter { $0.isLetter || $0.isNumber }
                             let upper = filtered.uppercased()
                             if upper != newValue { keyInput = upper }
