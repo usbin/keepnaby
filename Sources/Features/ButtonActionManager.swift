@@ -261,12 +261,17 @@ final class ButtonActionManager: ObservableObject {
     /// 내부 추적은 분 틱 단위지만 펌웨어 `recalibrate_move`는 모터 스텝 단위 → 송신 시 변환.
     /// 실측: 분침 15 step → 5분, 시침 15 step → 7.5분. 두 모터 기어비가 달라 분당 스텝 다름.
     /// 분침: 3 step/분, 시침: 2 step/분.
+    /// 분침(motor 1)은 음수 delta 처리가 펌웨어에서 일관되지 않음(0,0 복귀 시 50/55에서 멈춤 현상) →
+    /// motor 1은 음수 delta 시 +60 더해 forward wrap로 송신. motor 0(시침)은 음수 정상 동작.
     private static let stepsPerMinuteMarkHour = 2   // motor 0
     private static let stepsPerMinuteMarkMinute = 3 // motor 1
     private func moveHand(motor: Int, to target: Int) {
         let current = motor == 0 ? currentHourPos : currentMinutePos
-        let delta = target - current
+        var delta = target - current
         guard delta != 0 else { return }
+        if motor == 1 && delta < 0 {
+            delta += 60  // forward wrap (시계방향)
+        }
         let scale = motor == 0 ? Self.stepsPerMinuteMarkHour : Self.stepsPerMinuteMarkMinute
         let stepDelta = delta * scale
         bleManager?.sendCommand(name: "recalibrate_move", value: [motor, stepDelta])
@@ -455,15 +460,18 @@ final class ButtonActionManager: ObservableObject {
 
     /// recalibrate(false) 직전에 양 바늘을 0(12시)으로 복귀시킨 뒤 종료 + datetime 전송.
     /// 시침이 카운터 위치(N×5분)에 남은 채로 종료하면 펌웨어가 오프셋을 복원하지 못해
-    /// 시각 표시가 그만큼 틀어짐(분침은 매 심볼 끝마다 0 복귀라 영향 없음).
+    /// 시각 표시가 그만큼 틀어짐.
+    /// 분침은 forward wrap이므로 실제 이동 거리는 (60 - prevMinute) — 대기 시간 계산에 반영.
     private func exitRecalibrateAndSyncTime() {
         let prevHour = currentHourPos
         let prevMinute = currentMinutePos
         moveHand(motor: 0, to: 0)
         moveHand(motor: 1, to: 0)
-        let travel = max(estimatedTravelTime(from: 0, to: abs(prevHour)),
-                         estimatedTravelTime(from: 0, to: abs(prevMinute)))
-        DispatchQueue.main.asyncAfter(deadline: .now() + travel + 0.3) { [weak self] in
+        let hourDist = abs(prevHour)
+        let minuteDist = prevMinute == 0 ? 0 : (60 - prevMinute)
+        let travel = max(estimatedTravelTime(from: 0, to: hourDist),
+                         estimatedTravelTime(from: 0, to: minuteDist))
+        DispatchQueue.main.asyncAfter(deadline: .now() + travel + 1.0) { [weak self] in
             guard let self else { return }
             self.bleManager?.sendCommand(name: "recalibrate", value: false)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
