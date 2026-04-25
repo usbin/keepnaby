@@ -250,13 +250,16 @@ final class ButtonActionManager: ObservableObject {
 
     /// recalibrate 모드에서 한쪽 바늘을 절대 위치(분 틱 0~59)로 이동.
     /// 내부 추적은 분 틱 단위지만 펌웨어 `recalibrate_move`는 모터 스텝 단위 → 송신 시 변환.
-    /// 실측: delta=5 → 분침 1.5분, delta=10 → 3분 (스케일 1:3 가설, 1분 = 3 스텝).
-    private static let stepsPerMinuteMark = 3
+    /// 실측: 분침 15 step → 5분, 시침 15 step → 7.5분. 두 모터 기어비가 달라 분당 스텝 다름.
+    /// 분침: 3 step/분, 시침: 2 step/분.
+    private static let stepsPerMinuteMarkHour = 2   // motor 0
+    private static let stepsPerMinuteMarkMinute = 3 // motor 1
     private func moveHand(motor: Int, to target: Int) {
         let current = motor == 0 ? currentHourPos : currentMinutePos
         let delta = target - current
         guard delta != 0 else { return }
-        let stepDelta = delta * Self.stepsPerMinuteMark
+        let scale = motor == 0 ? Self.stepsPerMinuteMarkHour : Self.stepsPerMinuteMarkMinute
+        let stepDelta = delta * scale
         bleManager?.sendCommand(name: "recalibrate_move", value: [motor, stepDelta])
         if motor == 0 { currentHourPos = target } else { currentMinutePos = target }
     }
