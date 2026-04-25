@@ -482,7 +482,6 @@ extension BLEManager: CBPeripheralDelegate {
             switch char.uuid {
             case BLEConstants.commandCharUUID:
                 commandChar = char
-                peripheral.setNotifyValue(true, for: char)
                 log("→ commandChar 획득")
             case BLEConstants.notifyCharUUID:
                 notifyChar = char

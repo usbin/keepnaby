@@ -267,8 +267,10 @@ final class ButtonActionManager: ObservableObject {
             appendMorseSymbol(.dash)
         case (0, 1):  // 상단 1회 → 한 문자 확정
             confirmMorseChar()
-        case (0, 2):  // 상단 길게 → 점진적 취소
-            cancelCurrentSymbol()
+        case (0, 3):  // 상단 2회 → 점진 취소 (symbol → 1자 → 빈 상태 진동)
+            cancelStepwise()
+        case (0, 2):  // 상단 길게 → 전체 취소
+            cancelAll()
         default:
             // 그 외 입력은 모스모드 중엔 무시
             bleManager?.log("모스모드: 무시된 입력 (button=\(button), event=\(event))")
@@ -311,19 +313,35 @@ final class ButtonActionManager: ObservableObject {
         enqueueFeedback(symbols: symbols, counterIndex: morseCommandBuffer.count)
     }
 
-    private func cancelCurrentSymbol() {
+    /// 상단 2회 — 점진 취소: symbolBuffer → 1자 삭제 → 빈 상태 진동 2회
+    private func cancelStepwise() {
         if !morseSymbolBuffer.isEmpty {
             morseSymbolBuffer.removeAll()
             bleManager?.sendCommand(name: "vibrator_start", value: [100])
-            bleManager?.log("모스 1차 취소: 현재 심볼 버퍼 삭제")
+            bleManager?.log("모스 점진 취소: 심볼 버퍼 삭제")
         } else if !morseCommandBuffer.isEmpty {
-            morseCommandBuffer.removeAll()
+            bleManager?.sendCommand(name: "vibrator_start", value: [100])
+            morseCommandBuffer.removeLast()
+            bleManager?.log("모스 점진 취소: 1자 삭제 → 누적 \"\(morseCommandBuffer)\"")
+            enqueueCounterDecrement(targetIndex: morseCommandBuffer.count)
+        } else {
             bleManager?.sendCommand(name: "vibrator_start", value: [100, 80, 100])
-            bleManager?.log("모스 2차 취소: commandBuffer 전체 삭제")
-            // 카운터 바늘 0으로 리셋 (피드백 큐는 그대로 두되, 즉시 시각 리셋)
-            enqueueCounterReset()
+            bleManager?.log("모스 점진 취소: 빈 상태 — 진동 2회")
         }
-        // 둘 다 비어있으면 무시
+    }
+
+    /// 상단 길게 — 전체 취소: 두 버퍼 모두 비우고 시침 0 복귀
+    private func cancelAll() {
+        if !morseSymbolBuffer.isEmpty || !morseCommandBuffer.isEmpty {
+            morseSymbolBuffer.removeAll()
+            morseCommandBuffer.removeAll()
+            bleManager?.sendCommand(name: "vibrator_start", value: [200])
+            bleManager?.log("모스 전체 취소")
+            enqueueCounterDecrement(targetIndex: 0)
+        } else {
+            bleManager?.sendCommand(name: "vibrator_start", value: [100, 80, 100])
+            bleManager?.log("모스 전체 취소: 빈 상태 — 진동 2회")
+        }
     }
 
     private func commitAndExecuteMorse() {
@@ -411,9 +429,9 @@ final class ButtonActionManager: ObservableObject {
         if !isFeedbackPlaying { drainFeedbackQueue() }
     }
 
-    /// 카운터만 0으로 리셋하는 특수 큐 항목 (취소 시 사용)
-    private func enqueueCounterReset() {
-        feedbackQueue.append(([], 0))
+    /// 카운터-only 항목 enqueue. symbols 비워 두면 분침 무동작, 시침만 targetIndex×5로 직접 이동.
+    private func enqueueCounterDecrement(targetIndex: Int) {
+        feedbackQueue.append(([], targetIndex))
         if !isFeedbackPlaying { drainFeedbackQueue() }
     }
 
@@ -429,53 +447,42 @@ final class ButtonActionManager: ObservableObject {
         }
     }
 
-    /// 한 문자 피드백 시퀀스: [정렬→0:0] → [심볼 재생: 분침 5/10, 각 심볼 0 복귀] → [완료 신호 분침→15] → [시침 카운터 N×5]
+    /// 한 문자 피드백 시퀀스: [분침 0 정렬] → [심볼 재생: 분침 5/10, 각 심볼 0 복귀] → [시침 → counterIndex×5 직접 이동]
+    /// `symbols.isEmpty`이면 카운터-only — 분침 정렬 스킵, 시침만 직접 이동(취소 경로).
+    /// 시침은 0 경유 없이 currentHourPos → counterIndex×5 단일 delta.
     private func playFeedback(symbols: [MorseSymbol], counterIndex: Int, onComplete: @escaping () -> Void) {
-        alignHandsToZero { [weak self] in
+        if symbols.isEmpty {
+            let prevHour = self.currentHourPos
+            self.moveHand(motor: 0, to: counterIndex * 5)
+            let travel = self.estimatedTravelTime(from: prevHour, to: counterIndex * 5)
+            DispatchQueue.main.asyncAfter(deadline: .now() + travel + 0.3, execute: onComplete)
+            return
+        }
+        alignMinuteHandToZero { [weak self] in
             guard let self else { return }
-            if symbols.isEmpty {
-                // 빈 시퀀스 — 카운터만 갱신 (취소 시 진입 경로)
+            self.playSymbolSequence(symbols: symbols, index: 0) { [weak self] in
+                guard let self else { return }
                 let prevHour = self.currentHourPos
                 self.moveHand(motor: 0, to: counterIndex * 5)
                 let travel = self.estimatedTravelTime(from: prevHour, to: counterIndex * 5)
                 DispatchQueue.main.asyncAfter(deadline: .now() + travel + 0.3, execute: onComplete)
-                return
-            }
-            self.playSymbolSequence(symbols: symbols, index: 0) { [weak self] in
-                guard let self else { return }
-                // 완료 신호: 분침 → 15 (3시 방향), 0.5s 체류
-                self.moveHand(motor: 1, to: 15)
-                let signalTravel = self.estimatedTravelTime(from: 0, to: 15)
-                DispatchQueue.main.asyncAfter(deadline: .now() + signalTravel + 0.5) { [weak self] in
-                    guard let self else { return }
-                    // 분침 → 0, 시침 → N×5 (카운터)
-                    let prevHour = self.currentHourPos
-                    self.moveHand(motor: 1, to: 0)
-                    self.moveHand(motor: 0, to: counterIndex * 5)
-                    let maxTravel = max(
-                        self.estimatedTravelTime(from: 15, to: 0),
-                        self.estimatedTravelTime(from: prevHour, to: counterIndex * 5)
-                    )
-                    DispatchQueue.main.asyncAfter(deadline: .now() + maxTravel + 0.3, execute: onComplete)
-                }
             }
         }
     }
 
-    /// 분침/시침을 0:0으로 정렬. 이미 0:0이면 즉시 onComplete.
-    private func alignHandsToZero(onComplete: @escaping () -> Void) {
-        guard currentHourPos != 0 || currentMinutePos != 0 else {
+    /// 분침만 0으로 정렬. 시침은 절대 건드리지 않음 (카운터 위치 보존).
+    private func alignMinuteHandToZero(onComplete: @escaping () -> Void) {
+        guard currentMinutePos != 0 else {
             onComplete()
             return
         }
-        let maxDistance = max(abs(currentHourPos), abs(currentMinutePos))
+        let distance = abs(currentMinutePos)
         moveHand(motor: 1, to: 0)
-        moveHand(motor: 0, to: 0)
-        let travel = estimatedTravelTime(from: 0, to: maxDistance)
+        let travel = estimatedTravelTime(from: 0, to: distance)
         DispatchQueue.main.asyncAfter(deadline: .now() + travel + 0.2, execute: onComplete)
     }
 
-    /// 심볼 하나씩 분침으로 재생. 모든 심볼 재생 후 0 복귀 (마지막 포함 — 그 다음 완료 신호가 분침을 15로 끌고감).
+    /// 심볼 하나씩 분침으로 재생. 모든 심볼 재생 후 분침은 0에서 정지 (마지막 심볼도 0으로 복귀).
     private func playSymbolSequence(symbols: [MorseSymbol], index: Int, onComplete: @escaping () -> Void) {
         guard index < symbols.count else {
             onComplete()

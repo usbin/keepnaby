@@ -302,19 +302,29 @@ struct ConnectionView: View {
                 Text("누적:")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Text(actionManager.morseCommandBuffer.isEmpty ? "—" : actionManager.morseCommandBuffer)
-                    .font(.system(.body, design: .monospaced))
-                    .bold()
+                if actionManager.morseCommandBuffer.isEmpty {
+                    Text("(없음)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text(actionManager.morseCommandBuffer)
+                        .font(.system(.body, design: .monospaced))
+                        .bold()
+                }
             }
             HStack(alignment: .firstTextBaseline) {
                 Text("현재:")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Text(actionManager.morseSymbolBuffer.isEmpty
-                     ? "—"
-                     : actionManager.morseSymbolBuffer.map { $0 == .dot ? "·" : "−" }.joined(separator: " "))
-                    .font(.system(.body, design: .monospaced))
-                    .foregroundStyle(.orange)
+                if actionManager.morseSymbolBuffer.isEmpty {
+                    Text("(없음)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text(actionManager.morseSymbolBuffer.map { $0 == .dot ? "·" : "−" }.joined(separator: " "))
+                        .font(.system(.body, design: .monospaced))
+                        .foregroundStyle(.orange)
+                }
             }
         }
         .padding(10)
