@@ -197,14 +197,6 @@ final class BLEManager: NSObject, ObservableObject {
         BackgroundSyncScheduler.shared.scheduleAppRefresh()
     }
 
-    /// periodic 명령 (cmd 38) 탐색용 — 시계에 주기적 heartbeat 설정 시도
-    func tryPeriodicCommand() {
-        guard connectionState == .connected, commandMap["periodic"] != nil else { return }
-        // 1시간(3600초) 간격으로 시계가 주기적 데이터를 보내도록 시도
-        sendCommand(name: "periodic", value: 3600)
-        log("periodic(3600) 전송 — 시계 응답 관찰 필요")
-    }
-
     func requestBattery() {
         sendCommand(name: "vbat", value: 0)
     }
