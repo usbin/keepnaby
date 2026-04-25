@@ -416,11 +416,22 @@ final class ButtonActionManager: ObservableObject {
         }
     }
 
-    /// recalibrate(false) 후 datetime 전송 — 공식 앱과 동일한 플로우
+    /// recalibrate(false) 직전에 양 바늘을 0(12시)으로 복귀시킨 뒤 종료 + datetime 전송.
+    /// 시침이 카운터 위치(N×5분)에 남은 채로 종료하면 펌웨어가 오프셋을 복원하지 못해
+    /// 시각 표시가 그만큼 틀어짐(분침은 매 심볼 끝마다 0 복귀라 영향 없음).
     private func exitRecalibrateAndSyncTime() {
-        bleManager?.sendCommand(name: "recalibrate", value: false)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-            self?.sendCurrentDatetime()
+        let prevHour = currentHourPos
+        let prevMinute = currentMinutePos
+        moveHand(motor: 0, to: 0)
+        moveHand(motor: 1, to: 0)
+        let travel = max(estimatedTravelTime(from: 0, to: abs(prevHour)),
+                         estimatedTravelTime(from: 0, to: abs(prevMinute)))
+        DispatchQueue.main.asyncAfter(deadline: .now() + travel + 0.3) { [weak self] in
+            guard let self else { return }
+            self.bleManager?.sendCommand(name: "recalibrate", value: false)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                self?.sendCurrentDatetime()
+            }
         }
     }
 
