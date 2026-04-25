@@ -281,6 +281,90 @@ struct WatchSettingsView: View {
                     }
                     .font(.caption)
                 }
+
+                // MARK: - recalibrate_move 테스트
+                Section("recalibrate_move 테스트") {
+                    Text("delta 인자의 단위/스케일 검증.\n" +
+                         "선행조건: recalibrate(true) 후에만 동작.\n" +
+                         "stepper_goto와 달리 시계가 원래 시각으로 복귀하지 않음.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    HStack {
+                        Button(rmRecalibrateOn ? "recalibrate(false)" : "recalibrate(true)") {
+                            let next = !rmRecalibrateOn
+                            ble.sendCommand(name: "recalibrate", value: next)
+                            ble.log("recalibrate(\(next))")
+                            rmRecalibrateOn = next
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(rmRecalibrateOn ? .red : .green)
+                    }
+
+                    Text(rmRecalibrateOn ? "recalibrate 모드: ON" : "recalibrate 모드: OFF (먼저 켜야 동작)")
+                        .font(.caption)
+                        .foregroundStyle(rmRecalibrateOn ? .green : .secondary)
+
+                    HStack {
+                        Text("모터")
+                        Picker("", selection: $rmMotor) {
+                            Text("0 (시침?)").tag(0)
+                            Text("1 (분침?)").tag(1)
+                        }
+                        .pickerStyle(.segmented)
+                    }
+
+                    Stepper("delta: \(rmDelta)", value: $rmDelta, in: -180...180)
+
+                    Button("이동 → delta \(rmDelta)") {
+                        ble.sendCommand(name: "recalibrate_move", value: [rmMotor, rmDelta])
+                        ble.log("recalibrate_move([\(rmMotor), \(rmDelta)])")
+                    }
+                    .font(.caption)
+
+                    Text("자주 쓰는 delta:")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    ForEach([-30, -10, -5, -1, 1, 5, 10, 15, 30, 60], id: \.self) { val in
+                        Button("delta \(val > 0 ? "+" : "")\(val)") {
+                            ble.sendCommand(name: "recalibrate_move", value: [rmMotor, val])
+                            ble.log("recalibrate_move([\(rmMotor), \(val)])")
+                        }
+                        .font(.caption)
+                    }
+
+                    Text("스케일 추측 검증:\n" +
+                         "delta=5 → 1분 위치(1눈금)면 0~59 위치 스케일\n" +
+                         "delta=15 → 3시 방향이면 0~59 위치 스케일\n" +
+                         "그 외이면 raw step 단위 가능성")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+
+                    Button("recalibrate(false) + datetime 복귀") {
+                        ble.sendCommand(name: "recalibrate", value: false)
+                        rmRecalibrateOn = false
+                        let now = Date()
+                        var cal = Calendar.current
+                        cal.timeZone = .current
+                        let c = cal.dateComponents([.year, .month, .day, .hour, .minute, .second, .weekday], from: now)
+                        let kronabyDay: Int
+                        switch c.weekday! {
+                        case 1: kronabyDay = 5
+                        case 2: kronabyDay = 6
+                        case 3: kronabyDay = 0
+                        case 4: kronabyDay = 1
+                        case 5: kronabyDay = 2
+                        case 6: kronabyDay = 3
+                        case 7: kronabyDay = 4
+                        default: kronabyDay = 0
+                        }
+                        ble.sendCommand(name: "datetime", value: [c.year!, c.month!, c.day!, c.hour!, c.minute!, c.second!, kronabyDay])
+                        ble.log("recalibrate(false) + datetime 복귀")
+                    }
+                    .font(.caption)
+                    .tint(.orange)
+                }
                 #endif
             }
             .navigationTitle("시계 설정")
@@ -292,6 +376,9 @@ struct WatchSettingsView: View {
     #if DEBUG
     @State private var testMotor = 0
     @State private var testPosition = 0
+    @State private var rmMotor = 1
+    @State private var rmDelta = 5
+    @State private var rmRecalibrateOn = false
     #endif
 
     // MARK: - Helpers

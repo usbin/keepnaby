@@ -11,9 +11,10 @@ struct MorseMappingEditView: View {
     @State private var action: ButtonAction = ButtonAction()
 
     private var normalizedKey: String {
-        keyInput
+        String(keyInput
             .uppercased()
             .filter { $0.isLetter || $0.isNumber }
+            .prefix(ButtonActionManager.morseMaxCommandLength))
     }
 
     private var isValid: Bool {
@@ -36,9 +37,13 @@ struct MorseMappingEditView: View {
                         .textInputAutocapitalization(.characters)
                         .onChange(of: keyInput) { newValue in
                             let filtered = newValue.filter { $0.isLetter || $0.isNumber }
-                            let upper = filtered.uppercased()
+                            let upper = String(filtered.uppercased().prefix(ButtonActionManager.morseMaxCommandLength))
                             if upper != newValue { keyInput = upper }
                         }
+
+                    Text("최대 \(ButtonActionManager.morseMaxCommandLength)자 (영문/숫자)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
 
                     if !normalizedKey.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
