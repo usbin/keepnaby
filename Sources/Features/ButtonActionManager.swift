@@ -111,6 +111,8 @@ final class ButtonActionManager: ObservableObject {
     // 피드백 큐 (한 문자 확정 시마다 enqueue)
     private var feedbackQueue: [(symbols: [MorseSymbol], counterIndex: Int)] = []
     private var isFeedbackPlaying = false
+    /// in-flight 피드백 콜백 무효화용 generation 카운터. 새 입력마다 +1, 콜백은 자기 시점 generation 일치시에만 진행.
+    private var feedbackGeneration: Int = 0
     /// 모스모드 중 바늘 절대 위치 추적 (0~59 눈금, recalibrate_move 용 delta 계산).
     /// recalibrate(true) 직후엔 펌웨어가 양 바늘을 0으로 정렬.
     private var currentHourPos: Int = 0
@@ -160,6 +162,13 @@ final class ButtonActionManager: ObservableObject {
     // MARK: - Execute
 
     func handleButtonEvent(button: Int, event: Int) {
+        // 모스모드 중 새 입력 도착 → 진행 중 피드백 무효화 + 누적 should-be 위치로 스냅.
+        // 이렇게 해야 in-flight 콜백 체인이 BLE에 명령을 더 던지지 못하고, 다음 핸들러가
+        // 일관된 바늘 위치(commandBuffer 누적 변위)에서 시작할 수 있음.
+        if isMorseMode && isFeedbackPlaying {
+            cancelInflightFeedback()
+        }
+
         // 하단 길게 누름 → 모스모드 진입 또는 종료(명령 실행)
         if button == 2 && event == 2 {
             if isMorseMode {
@@ -328,38 +337,63 @@ final class ButtonActionManager: ObservableObject {
             bleManager?.sendCommand(name: "vibrator_start", value: [100])
             morseCommandBuffer.removeLast()
             bleManager?.log("모스 점진 취소: 1자 삭제 → 누적 \"\(morseCommandBuffer)\"")
-            enqueueCounterDecrement(targetIndex: morseCommandBuffer.count)
+            // 분침: 누적 변위 (mod 60), 시침: 글자 수 × 5. 둘 다 새 누적 상태로 직접 이동.
+            moveHand(motor: 1, to: minuteDisplacementForCommandBuffer())
+            moveHand(motor: 0, to: morseCommandBuffer.count * 5)
         } else {
             bleManager?.sendCommand(name: "vibrator_start", value: [100, 80, 100])
             bleManager?.log("모스 점진 취소: 빈 상태 — 진동 2회")
         }
     }
 
-    /// 상단 길게 — 전체 취소: 두 버퍼 모두 비우고 시침 0 복귀
+    /// 상단 길게 — 전체 취소: 두 버퍼 모두 비우고 양 바늘 0 복귀
     private func cancelAll() {
         if !morseSymbolBuffer.isEmpty || !morseCommandBuffer.isEmpty {
             morseSymbolBuffer.removeAll()
             morseCommandBuffer.removeAll()
             bleManager?.sendCommand(name: "vibrator_start", value: [200])
             bleManager?.log("모스 전체 취소")
-            enqueueCounterDecrement(targetIndex: 0)
+            moveHand(motor: 1, to: 0)
+            moveHand(motor: 0, to: 0)
         } else {
             bleManager?.sendCommand(name: "vibrator_start", value: [100, 80, 100])
             bleManager?.log("모스 전체 취소: 빈 상태 — 진동 2회")
         }
     }
 
+    /// 모스 명령어 누적 버퍼의 분침 총 변위 (mod 60). 점=5, 대시=10. 글자 간 0 복귀 없음.
+    private func minuteDisplacementForCommandBuffer() -> Int {
+        var total = 0
+        for char in morseCommandBuffer {
+            guard let symbols = MorseDecoder.encode(char) else { continue }
+            for sym in symbols {
+                total += (sym == .dot ? 5 : 10)
+            }
+        }
+        return total % 60
+    }
+
+    /// 진행 중 피드백 콜백 체인을 무효화하고 should-be 위치로 스냅.
+    /// generation 증가 → 향후 fired async 콜백은 mismatch로 조기 종료.
+    /// 큐 비우기 + isFeedbackPlaying=false + (분침=누적 변위, 시침=count×5)로 절대 이동.
+    private func cancelInflightFeedback() {
+        feedbackGeneration += 1
+        feedbackQueue.removeAll()
+        isFeedbackPlaying = false
+        moveHand(motor: 1, to: minuteDisplacementForCommandBuffer())
+        moveHand(motor: 0, to: morseCommandBuffer.count * 5)
+    }
+
     private func commitAndExecuteMorse() {
         let key = morseCommandBuffer.uppercased()
         morseSymbolBuffer.removeAll()
         morseCommandBuffer.removeAll()
-        // 진행 중이던 피드백 큐는 모두 폐기 (현재 재생 항목은 자연스럽게 끝나도록 둔다)
         feedbackQueue.removeAll()
 
-        // 피드백이 재생 중이면 끝날 때까지 잠깐 기다린 뒤 실행
-        let delay: Double = isFeedbackPlaying ? 0.6 : 0.0
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+        // 직전 cancelInflightFeedback가 BLE 큐에 스냅 명령(분침/시침 → should-be)을 넣었을 수 있음.
+        // 그게 펌웨어에서 처리될 시간을 확보한 뒤 종료 시퀀스 진행 — 그렇지 않으면
+        // exitRecalibrate의 0,0 이동이 in-flight 명령들과 섞여 위치가 어긋남.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
             guard let self else { return }
             self.runMorseExecution(key: key)
         }
@@ -445,12 +479,6 @@ final class ButtonActionManager: ObservableObject {
         if !isFeedbackPlaying { drainFeedbackQueue() }
     }
 
-    /// 카운터-only 항목 enqueue. symbols 비워 두면 분침 무동작, 시침만 targetIndex×5로 직접 이동.
-    private func enqueueCounterDecrement(targetIndex: Int) {
-        feedbackQueue.append(([], targetIndex))
-        if !isFeedbackPlaying { drainFeedbackQueue() }
-    }
-
     private func drainFeedbackQueue() {
         guard !feedbackQueue.isEmpty else {
             isFeedbackPlaying = false
@@ -463,59 +491,48 @@ final class ButtonActionManager: ObservableObject {
         }
     }
 
-    /// 한 문자 피드백 시퀀스: [분침 0 정렬] → [심볼 재생: 분침 5/10, 각 심볼 0 복귀] → [시침 → counterIndex×5 직접 이동]
-    /// `symbols.isEmpty`이면 카운터-only — 분침 정렬 스킵, 시침만 직접 이동(취소 경로).
-    /// 시침은 0 경유 없이 currentHourPos → counterIndex×5 단일 delta.
+    /// 한 문자 피드백: 분침을 누적적으로 +5(점)/+10(대시)씩 이동(0 복귀 없음, mod 60), 그 뒤 시침 → counterIndex×5 직접 이동.
+    /// generation 일치 검사로 in-flight 콜백 체인 무효화 가능.
     private func playFeedback(symbols: [MorseSymbol], counterIndex: Int, onComplete: @escaping () -> Void) {
-        if symbols.isEmpty {
+        let gen = feedbackGeneration
+        playSymbolSequence(symbols: symbols, index: 0, generation: gen) { [weak self] in
+            guard let self, gen == self.feedbackGeneration else { return }
             let prevHour = self.currentHourPos
             self.moveHand(motor: 0, to: counterIndex * 5)
             let travel = self.estimatedTravelTime(from: prevHour, to: counterIndex * 5)
-            DispatchQueue.main.asyncAfter(deadline: .now() + travel + 0.3, execute: onComplete)
-            return
-        }
-        alignMinuteHandToZero { [weak self] in
-            guard let self else { return }
-            self.playSymbolSequence(symbols: symbols, index: 0) { [weak self] in
-                guard let self else { return }
-                let prevHour = self.currentHourPos
-                self.moveHand(motor: 0, to: counterIndex * 5)
-                let travel = self.estimatedTravelTime(from: prevHour, to: counterIndex * 5)
-                DispatchQueue.main.asyncAfter(deadline: .now() + travel + 0.3, execute: onComplete)
+            DispatchQueue.main.asyncAfter(deadline: .now() + travel + 0.3) { [weak self] in
+                guard let self, gen == self.feedbackGeneration else { return }
+                onComplete()
             }
         }
     }
 
-    /// 분침만 0으로 정렬. 시침은 절대 건드리지 않음 (카운터 위치 보존).
-    private func alignMinuteHandToZero(onComplete: @escaping () -> Void) {
-        guard currentMinutePos != 0 else {
-            onComplete()
-            return
-        }
-        let distance = abs(currentMinutePos)
-        moveHand(motor: 1, to: 0)
-        let travel = estimatedTravelTime(from: 0, to: distance)
-        DispatchQueue.main.asyncAfter(deadline: .now() + travel + 0.2, execute: onComplete)
-    }
-
-    /// 심볼 하나씩 분침으로 재생. 모든 심볼 재생 후 분침은 0에서 정지 (마지막 심볼도 0으로 복귀).
-    private func playSymbolSequence(symbols: [MorseSymbol], index: Int, onComplete: @escaping () -> Void) {
+    /// 심볼 하나씩 분침에 누적 가산 (점=+5, 대시=+10). 0 복귀 없이 그대로 다음 심볼로 이동.
+    private func playSymbolSequence(symbols: [MorseSymbol], index: Int, generation: Int, onComplete: @escaping () -> Void) {
         guard index < symbols.count else {
             onComplete()
             return
         }
-        let target = symbols[index] == .dot ? 5 : 10
-        moveHand(motor: 1, to: target)
-        let travelUp = estimatedTravelTime(from: 0, to: target)
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + travelUp + 0.25) { [weak self] in
-            guard let self else { return }
-            self.moveHand(motor: 1, to: 0)
-            let travelDown = self.estimatedTravelTime(from: target, to: 0)
-            DispatchQueue.main.asyncAfter(deadline: .now() + travelDown + 0.15) { [weak self] in
-                self?.playSymbolSequence(symbols: symbols, index: index + 1, onComplete: onComplete)
-            }
+        let increment = symbols[index] == .dot ? 5 : 10
+        moveHandRelative(motor: 1, byMarks: increment)
+        let travel = estimatedTravelTime(from: 0, to: increment)
+        DispatchQueue.main.asyncAfter(deadline: .now() + travel + 0.25) { [weak self] in
+            guard let self, generation == self.feedbackGeneration else { return }
+            self.playSymbolSequence(symbols: symbols, index: index + 1, generation: generation, onComplete: onComplete)
         }
+    }
+
+    /// 바늘을 현재 위치에서 +delta 분 마크 만큼 시계방향으로 누적 이동 (mod 60).
+    /// `moveHand`의 절대 target 모드는 wrap 시 음수 delta를 보내 반시계 회전이 되므로,
+    /// 누적 모델용으로 별도 헬퍼 — 항상 양수 delta를 송신.
+    private func moveHandRelative(motor: Int, byMarks delta: Int) {
+        guard delta != 0 else { return }
+        let scale = motor == 0 ? Self.stepsPerMinuteMarkHour : Self.stepsPerMinuteMarkMinute
+        let stepDelta = delta * scale
+        bleManager?.sendCommand(name: "recalibrate_move", value: [motor, stepDelta])
+        let current = motor == 0 ? currentHourPos : currentMinutePos
+        let next = ((current + delta) % 60 + 60) % 60
+        if motor == 0 { currentHourPos = next } else { currentMinutePos = next }
     }
 
     /// 인식 실패 시 분침 5↔10 짧은 흔들기 후 0으로 복귀.
