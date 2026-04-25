@@ -9,7 +9,6 @@ struct MorseMappingEditView: View {
 
     @State private var keyInput: String = ""
     @State private var action: ButtonAction = ButtonAction()
-    @State private var showDuplicateAlert = false
 
     private var normalizedKey: String {
         keyInput
@@ -64,6 +63,24 @@ struct MorseMappingEditView: View {
                     actionPicker(selection: $action)
                 }
                 actionDetail(action: $action)
+
+                if originalKey != nil {
+                    Section {
+                        Button(role: .destructive) {
+                            if let originalKey {
+                                actionManager.morseMappings.removeValue(forKey: originalKey)
+                                actionManager.saveMorse()
+                            }
+                            dismiss()
+                        } label: {
+                            HStack {
+                                Spacer()
+                                Label("이 명령 삭제", systemImage: "trash")
+                                Spacer()
+                            }
+                        }
+                    }
+                }
             }
             .navigationTitle(originalKey == nil ? "모스 명령 추가" : "모스 명령 편집")
             .navigationBarTitleDisplayMode(.inline)
@@ -78,19 +95,6 @@ struct MorseMappingEditView: View {
                 if let originalKey {
                     keyInput = originalKey
                     action = actionManager.morseMappings[originalKey] ?? ButtonAction()
-                }
-            }
-            .toolbar {
-                if originalKey != nil {
-                    ToolbarItem(placement: .bottomBar) {
-                        Button("삭제", role: .destructive) {
-                            if let originalKey {
-                                actionManager.morseMappings.removeValue(forKey: originalKey)
-                                actionManager.saveMorse()
-                            }
-                            dismiss()
-                        }
-                    }
                 }
             }
         }
