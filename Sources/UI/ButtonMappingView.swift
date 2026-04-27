@@ -281,15 +281,15 @@ struct ActionDetailView: View {
                     TextField("/경로  (예: /api/on)", text: $action.urlPath)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
-                    TextField("파라미터  (예: token=abc&ch=1)", text: $action.urlParams)
+                    TextField("파라미터  (예: token=abc&ch=1)", text: $action.urlParams, axis: .vertical)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
+                        .lineLimit(2...)
                     let preview = actionManager.resolvedURL(for: action)
                     if !preview.isEmpty {
                         Text(preview)
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                            .lineLimit(2)
                     }
                 } else {
                     TextField("https://...", text: $action.urlString)
