@@ -129,14 +129,21 @@ struct ButtonMappingView: View {
         } label: {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(key)
-                        .font(.system(.body, design: .monospaced))
+                    HStack(spacing: 6) {
+                        Text(key)
+                            .font(.system(.body, design: .monospaced))
+                        if !action.label.isEmpty {
+                            Text(action.label)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                     Text(MorseDecoder.encodeString(key))
                         .font(.system(.caption2, design: .monospaced))
                         .foregroundStyle(.orange)
                 }
                 Spacer()
-                Text(action.summary)
+                Text(action.label.isEmpty ? action.summary : action.type.displayName)
                     .foregroundStyle(.secondary)
                 Image(systemName: "chevron.right")
                     .font(.caption)
@@ -169,7 +176,7 @@ struct ActionEditView: View {
                 Section("\(key.displayButton) — \(key.displayEvent)") {
                     actionPicker(selection: $action)
                 }
-                actionDetail(action: $action)
+                ActionDetailView(action: $action)
             }
             .navigationTitle("동작 설정")
             .navigationBarTitleDisplayMode(.inline)
@@ -216,43 +223,187 @@ func actionPicker(selection: Binding<ButtonAction>) -> some View {
     }
 }
 
-@ViewBuilder
-func actionDetail(action: Binding<ButtonAction>) -> some View {
-    switch action.wrappedValue.type {
-    case .findPhone:
-        Section("폰 찾기 옵션") {
-            Toggle("시스템 볼륨 최대화 (작동 후 복원 안 됨)", isOn: Binding(
-                get: { FindMyPhone.maxVolumeEnabled },
-                set: { FindMyPhone.maxVolumeEnabled = $0 }
-            ))
+struct ActionDetailView: View {
+    @Binding var action: ButtonAction
+    @EnvironmentObject var actionManager: ButtonActionManager
+
+    var body: some View {
+        switch action.type {
+        case .findPhone:
+            Section("폰 찾기 옵션") {
+                Toggle("시스템 볼륨 최대화 (작동 후 복원 안 됨)", isOn: Binding(
+                    get: { FindMyPhone.maxVolumeEnabled },
+                    set: { FindMyPhone.maxVolumeEnabled = $0 }
+                ))
+            }
+        case .iftttWebhook:
+            Section("IFTTT 이벤트") {
+                TextField("이벤트 이름", text: $action.iftttEventName)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+            }
+        case .shortcut:
+            Section("단축어") {
+                TextField("단축어 이름 (정확히 입력)", text: $action.shortcutName)
+                    .autocorrectionDisabled()
+            }
+        case .urlRequest:
+            urlRequestSections
+        case .randomDice:
+            Section("주사위 범위") {
+                Stepper("1시 ~ \(action.diceMax)시", value: $action.diceMax, in: 2...12)
+                Text("버튼 누르면 12시부터 회전하며 1~\(action.diceMax) 중 무작위 시각 위치에서 멈추고 진동합니다.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        default:
+            EmptyView()
         }
-    case .iftttWebhook:
-        Section("IFTTT 이벤트") {
-            TextField("이벤트 이름", text: action.iftttEventName)
-                .autocorrectionDisabled()
-                .textInputAutocapitalization(.never)
+    }
+
+    @ViewBuilder
+    private var urlRequestSections: some View {
+        let usePreset = action.urlPresetID != nil
+        Section("URL 요청") {
+            if actionManager.webhookPresets.isEmpty {
+                TextField("https://...", text: $action.urlString)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .keyboardType(.URL)
+            } else {
+                Picker("Base URL", selection: $action.urlPresetID) {
+                    Text("직접 입력").tag(nil as UUID?)
+                    ForEach(actionManager.webhookPresets) { preset in
+                        Text(preset.name).tag(preset.id as UUID?)
+                    }
+                }
+                if usePreset {
+                    TextField("/경로  (예: /api/on)", text: $action.urlPath)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                    TextField("파라미터  (예: token=abc&ch=1)", text: $action.urlParams)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                    let preview = actionManager.resolvedURL(for: action)
+                    if !preview.isEmpty {
+                        Text(preview)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                } else {
+                    TextField("https://...", text: $action.urlString)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                        .keyboardType(.URL)
+                }
+            }
         }
-    case .shortcut:
-        Section("단축어") {
-            TextField("단축어 이름 (정확히 입력)", text: action.shortcutName)
-                .autocorrectionDisabled()
+        Section {
+            NavigationLink("Webhook 프리셋 관리") {
+                WebhookPresetListView()
+            }
         }
-    case .urlRequest:
-        Section("URL") {
-            TextField("https://...", text: action.urlString)
-                .autocorrectionDisabled()
-                .textInputAutocapitalization(.never)
-                .keyboardType(.URL)
+    }
+}
+
+// MARK: - Webhook Preset Management
+
+struct WebhookPresetListView: View {
+    @EnvironmentObject var actionManager: ButtonActionManager
+    @State private var editingPreset: WebhookPreset? = nil
+    @State private var isAdding = false
+
+    var body: some View {
+        List {
+            ForEach(actionManager.webhookPresets) { preset in
+                Button {
+                    editingPreset = preset
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(preset.name)
+                        Text(preset.baseURL)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .foregroundStyle(.primary)
+            }
+            .onDelete { indexSet in
+                actionManager.webhookPresets.remove(atOffsets: indexSet)
+                actionManager.saveWebhookPresets()
+            }
+            Button {
+                isAdding = true
+            } label: {
+                Label("프리셋 추가", systemImage: "plus.circle")
+            }
         }
-    case .randomDice:
-        Section("주사위 범위") {
-            Stepper("1시 ~ \(action.wrappedValue.diceMax)시",
-                    value: action.diceMax, in: 2...12)
-            Text("버튼 누르면 12시부터 회전하며 1~\(action.wrappedValue.diceMax) 중 무작위 시각 위치에서 멈추고 진동합니다.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+        .navigationTitle("Webhook 프리셋")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar { EditButton() }
+        .sheet(item: $editingPreset) { preset in
+            WebhookPresetEditView(originalPreset: preset)
+                .environmentObject(actionManager)
         }
-    default:
-        EmptyView()
+        .sheet(isPresented: $isAdding) {
+            WebhookPresetEditView(originalPreset: nil)
+                .environmentObject(actionManager)
+        }
+    }
+}
+
+struct WebhookPresetEditView: View {
+    let originalPreset: WebhookPreset?
+    @EnvironmentObject var actionManager: ButtonActionManager
+    @Environment(\.dismiss) var dismiss
+
+    @State private var name: String
+    @State private var baseURL: String
+
+    init(originalPreset: WebhookPreset?) {
+        self.originalPreset = originalPreset
+        _name = State(initialValue: originalPreset?.name ?? "")
+        _baseURL = State(initialValue: originalPreset?.baseURL ?? "")
+    }
+
+    private var isValid: Bool {
+        !name.trimmingCharacters(in: .whitespaces).isEmpty && !baseURL.isEmpty
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("이름") {
+                    TextField("예: 홈서버", text: $name)
+                }
+                Section("Base URL") {
+                    TextField("http://192.168.1.1:8080", text: $baseURL)
+                        .keyboardType(.URL)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                }
+            }
+            .navigationTitle(originalPreset == nil ? "프리셋 추가" : "프리셋 편집")
+            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarItems(
+                leading: Button("취소") { dismiss() },
+                trailing: Button("저장") { save() }.disabled(!isValid)
+            )
+        }
+    }
+
+    private func save() {
+        let trimmedName = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmedName.isEmpty, !baseURL.isEmpty else { return }
+        if let original = originalPreset,
+           let index = actionManager.webhookPresets.firstIndex(where: { $0.id == original.id }) {
+            actionManager.webhookPresets[index].name = trimmedName
+            actionManager.webhookPresets[index].baseURL = baseURL
+        } else {
+            actionManager.webhookPresets.append(WebhookPreset(name: trimmedName, baseURL: baseURL))
+        }
+        actionManager.saveWebhookPresets()
+        dismiss()
     }
 }

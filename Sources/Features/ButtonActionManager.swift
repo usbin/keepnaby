@@ -32,7 +32,7 @@ enum ButtonActionType: String, Codable, CaseIterable {
         case .randomDice: return "랜덤 주사위"
         case .iftttWebhook: return "IFTTT Webhook"
         case .shortcut: return "단축어 실행 (앱 열림)"
-        case .urlRequest: return "URL 요청"
+        case .urlRequest: return label.isEmpty ? "URL 요청" : label
         }
     }
 
@@ -47,12 +47,22 @@ enum ButtonActionType: String, Codable, CaseIterable {
     }
 }
 
+struct WebhookPreset: Codable, Identifiable, Equatable {
+    var id: UUID = UUID()
+    var name: String = ""
+    var baseURL: String = ""
+}
+
 struct ButtonAction: Codable, Equatable {
     var type: ButtonActionType = .none
     var iftttEventName: String = ""
     var shortcutName: String = ""
     var urlString: String = ""
+    var urlPresetID: UUID? = nil
+    var urlPath: String = ""
+    var urlParams: String = ""
     var diceMax: Int = 6  // 주사위 최대값 (1...diceMax 범위에서 랜덤)
+    var label: String = ""
 
     /// 실행 내역용 짧은 설명
     var summary: String {
@@ -69,7 +79,7 @@ struct ButtonAction: Codable, Equatable {
         case .randomDice: return "주사위 (1시–\(diceMax)시)"
         case .iftttWebhook: return "IFTTT: \(iftttEventName)"
         case .shortcut: return "단축어: \(shortcutName)"
-        case .urlRequest: return "URL 요청"
+        case .urlRequest: return label.isEmpty ? "URL 요청" : label
         }
     }
 }
@@ -101,6 +111,7 @@ struct ButtonKey: Hashable, Codable {
 final class ButtonActionManager: ObservableObject {
     @Published var mappings: [String: ButtonAction] = [:]
     @Published var iftttKey: String = ""
+    @Published var webhookPresets: [WebhookPreset] = []
 
     // 모스부호 입력 모드
     @Published var morseMappings: [String: ButtonAction] = [:]
@@ -152,6 +163,7 @@ final class ButtonActionManager: ObservableObject {
     private static let mappingsKey = "button_mappings"
     private static let iftttKeyKey = "ifttt_webhook_key"
     private static let morseKey = "morse_mappings"
+    private static let webhookPresetsKey = "webhook_presets"
 
     // 상단 전체 + 하단 1회/2회/3회/4회 (길게 누름 제외)
     static let allButtons: [ButtonKey] = {
@@ -242,7 +254,7 @@ final class ButtonActionManager: ObservableObject {
         case .shortcut:
             runShortcut(name: action.shortcutName)
         case .urlRequest:
-            fireURL(urlString: action.urlString)
+            fireURL(urlString: resolvedURL(for: action))
         }
     }
 
@@ -899,6 +911,27 @@ final class ButtonActionManager: ObservableObject {
 
     // MARK: - URL Request
 
+    func resolvedURL(for action: ButtonAction) -> String {
+        if let presetID = action.urlPresetID,
+           let preset = webhookPresets.first(where: { $0.id == presetID }) {
+            var url = preset.baseURL
+            if !action.urlPath.isEmpty {
+                url += action.urlPath.hasPrefix("/") ? action.urlPath : "/" + action.urlPath
+            }
+            if !action.urlParams.isEmpty {
+                url += "?" + action.urlParams
+            }
+            return url
+        }
+        return action.urlString
+    }
+
+    func saveWebhookPresets() {
+        if let data = try? JSONEncoder().encode(webhookPresets) {
+            UserDefaults.standard.set(data, forKey: Self.webhookPresetsKey)
+        }
+    }
+
     private func fireURL(urlString: String) {
         guard let url = URL(string: urlString) else { return }
         var request = URLRequest(url: url)
@@ -916,6 +949,9 @@ final class ButtonActionManager: ObservableObject {
         if let data = try? JSONEncoder().encode(morseMappings) {
             UserDefaults.standard.set(data, forKey: Self.morseKey)
         }
+        if let data = try? JSONEncoder().encode(webhookPresets) {
+            UserDefaults.standard.set(data, forKey: Self.webhookPresetsKey)
+        }
     }
 
     func load() {
@@ -927,6 +963,10 @@ final class ButtonActionManager: ObservableObject {
         if let data = UserDefaults.standard.data(forKey: Self.morseKey),
            let decoded = try? JSONDecoder().decode([String: ButtonAction].self, from: data) {
             morseMappings = decoded
+        }
+        if let data = UserDefaults.standard.data(forKey: Self.webhookPresetsKey),
+           let decoded = try? JSONDecoder().decode([WebhookPreset].self, from: data) {
+            webhookPresets = decoded
         }
     }
 

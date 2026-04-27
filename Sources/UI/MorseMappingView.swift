@@ -9,6 +9,7 @@ struct MorseMappingEditView: View {
 
     @State private var keyInput: String = ""
     @State private var action: ButtonAction = ButtonAction()
+    @State private var label: String = ""
 
     private var normalizedKey: String {
         String(keyInput
@@ -63,10 +64,15 @@ struct MorseMappingEditView: View {
                     }
                 }
 
+                Section("설명 (선택)") {
+                    TextField("예: Computer ON (상단)", text: $label)
+                        .autocorrectionDisabled()
+                }
+
                 Section("동작") {
                     actionPicker(selection: $action)
                 }
-                actionDetail(action: $action)
+                ActionDetailView(action: $action)
 
                 if originalKey != nil {
                     Section {
@@ -98,7 +104,9 @@ struct MorseMappingEditView: View {
             .onAppear {
                 if let originalKey {
                     keyInput = originalKey
-                    action = actionManager.morseMappings[originalKey] ?? ButtonAction()
+                    let existing = actionManager.morseMappings[originalKey] ?? ButtonAction()
+                    action = existing
+                    label = existing.label
                 }
             }
         }
@@ -106,11 +114,12 @@ struct MorseMappingEditView: View {
 
     private func saveMapping() {
         guard isValid, !isDuplicate else { return }
-        // 키 변경 시 기존 항목 삭제
+        var saved = action
+        saved.label = label
         if let originalKey, originalKey != normalizedKey {
             actionManager.morseMappings.removeValue(forKey: originalKey)
         }
-        actionManager.morseMappings[normalizedKey] = action
+        actionManager.morseMappings[normalizedKey] = saved
         actionManager.saveMorse()
         dismiss()
     }
