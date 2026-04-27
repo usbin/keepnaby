@@ -32,7 +32,7 @@ enum ButtonActionType: String, Codable, CaseIterable {
         case .randomDice: return "랜덤 주사위"
         case .iftttWebhook: return "IFTTT Webhook"
         case .shortcut: return "단축어 실행 (앱 열림)"
-        case .urlRequest: return label.isEmpty ? "URL 요청" : label
+        case .urlRequest: return "URL 요청"
         }
     }
 
