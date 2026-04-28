@@ -282,10 +282,20 @@ final class ButtonActionManager: ObservableObject {
         resetMotorTracks()
         // 진동 1회 — 시작
         bleManager?.sendCommand(name: "vibrator_start", value: [150])
+        // 크라운 complication 비활성화 (모스모드 중 실수 방지)
+        bleManager?.sendCommand(name: "complications", value: [5, 15, 18])
         // 캘리브레이션 진입 → 펌웨어가 바늘을 0(12시)으로 자동 이동
         bleManager?.sendCommand(name: "recalibrate", value: true)
         isRecalibrateActive = true
         bleManager?.log("모스모드 시작 → 0시 (recalibrate)")
+    }
+
+    private static let crownModeKey = "kronaby_crown_mode"
+
+    private func restoreCrownComplication() {
+        let mode = UserDefaults.standard.integer(forKey: Self.crownModeKey)
+        bleManager?.sendCommand(name: "complications", value: [5, mode, 18])
+        bleManager?.log("크라운 복원: mode \(mode)")
     }
 
     /// recalibrate 모드에서 바늘을 절대 위치(분 틱 0~59)로 이동 — single-flight 큐.
@@ -527,6 +537,7 @@ final class ButtonActionManager: ObservableObject {
         // 표시 액션·주사위는 recalibrate 유지한 채 실행 (executeDisplayAction/rollDiceInRecalibrate 끝에 exitRecalibrate),
         // 그 외는 즉시 exitRecalibrate 후 액션 실행.
         isMorseMode = false
+        restoreCrownComplication()
         if action.type == .showDate || action.type == .showBattery || action.type == .showSteps {
             executeDisplayAction(action)
         } else if action.type == .randomDice {
@@ -542,6 +553,7 @@ final class ButtonActionManager: ObservableObject {
     private func finalizeMorseExit() {
         isMorseMode = false
         feedbackQueue.removeAll()
+        restoreCrownComplication()
         exitRecalibrateAndSyncTime()
     }
 
