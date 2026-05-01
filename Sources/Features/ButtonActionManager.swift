@@ -194,6 +194,12 @@ final class ButtonActionManager: ObservableObject {
     // MARK: - Execute
 
     func handleButtonEvent(button: Int, event: Int) {
+        // 폰 찾기 재생 중엔 어떤 버튼 입력이든 정지로 흡수 — 매핑된 액션은 실행하지 않음
+        if isFindMyPhonePlaying {
+            stopFindMyPhone()
+            return
+        }
+
         // 모스모드 중 새 입력 도착 → 진행 중 피드백 무효화 + 누적 should-be 위치로 스냅.
         // 이렇게 해야 in-flight 콜백 체인이 BLE에 명령을 더 던지지 못하고, 다음 핸들러가
         // 일관된 바늘 위치(commandBuffer 누적 변위)에서 시작할 수 있음.

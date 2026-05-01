@@ -48,7 +48,7 @@ Bluetooth State Restoration 활성화로 백그라운드 재연결 지원
 | `ActionHistoryManager.swift` | 버튼·모스 액션 실행 이력 저장 (최대 300건, UserDefaults) |
 | `MorseDecoder.swift` | 모스 코드 ↔ 영문자·숫자 변환 테이블 (A-Z, 0-9) |
 | `MusicController.swift` | 음악 재생 제어 래퍼 (재생/일시정지/다음/이전) |
-| `FindMyPhone.swift` | 매너모드/무음 모드 무시하고 알람 사운드 재생 (`Resources/alarm.wav` 30s 루프) |
+| `FindMyPhone.swift` | 매너모드/무음 모드 무시하고 알람 사운드 재생 (`Resources/alarm.wav` 30s 루프). 재생 중 시계 어떤 버튼이든 누르면 즉시 정지 |
 
 ### 모스 입력 흐름
 
