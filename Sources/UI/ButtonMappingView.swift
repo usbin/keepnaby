@@ -229,13 +229,6 @@ struct ActionDetailView: View {
 
     var body: some View {
         switch action.type {
-        case .findPhone:
-            Section("폰 찾기 옵션") {
-                Toggle("시스템 볼륨 최대화 (작동 후 복원 안 됨)", isOn: Binding(
-                    get: { FindMyPhone.maxVolumeEnabled },
-                    set: { FindMyPhone.maxVolumeEnabled = $0 }
-                ))
-            }
         case .iftttWebhook:
             Section("IFTTT 이벤트") {
                 TextField("이벤트 이름", text: $action.iftttEventName)

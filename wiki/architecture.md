@@ -1,4 +1,4 @@
-<!-- 최종 수정: 2026-04-27 -->
+<!-- 최종 수정: 2026-05-01 -->
 
 # 아키텍처
 
@@ -11,6 +11,7 @@ keepnaby/
 │   ├── Info.plist                 # 앱 메타데이터·권한 선언
 │   ├── Keepnaby.entitlements      # HealthKit, Wi-Fi Info 권한
 │   ├── Assets.xcassets/           # 앱 아이콘·이미지
+│   ├── Resources/                 # 번들 리소스 (alarm.wav 등)
 │   ├── BLE/                       # CoreBluetooth + 프로토콜 계층
 │   ├── Features/                  # 비즈니스 로직 매니저
 │   └── UI/                        # SwiftUI 뷰

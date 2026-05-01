@@ -1,4 +1,4 @@
-<!-- 최종 수정: 2026-04-28 -->
+<!-- 최종 수정: 2026-05-01 -->
 
 # 개발 노트
 
@@ -17,6 +17,18 @@
 ---
 
 ## 설계 결정 이유
+
+### 폰 찾기 매너모드 우회 (2026-05-01)
+
+매너모드/무음 스위치 ON 상태에서도 알람 사운드가 나도록 다음 조합을 사용:
+
+1. `AVAudioSession` 카테고리 = `.playback` — 무음 스위치 무시 (음악 앱과 동일)
+2. 번들된 `Sources/Resources/alarm.wav` (880Hz 0.4s ON + 0.3s OFF, 1사이클 약 30KB) 를 `AVAudioPlayer` 로 무한 루프
+3. `Info.plist > UIBackgroundModes` 에 `audio` 추가 — 시계 버튼 BLE 트리거가 보통 앱 백그라운드 상태에서 발생하므로 필요
+
+**기존 버그**: `/System/Library/Audio/UISounds/alarm.caf` 직접 경로는 iOS 앱 샌드박스에서 접근 불가 → `AVAudioPlayer` 생성이 항상 실패 → catch 폴백의 `AudioServicesPlayAlertSound(1005)` 가 매너모드를 존중해서 진동만 발생했음.
+
+**제거된 옵션**: `findphone_max_volume` (시스템 볼륨 강제 최대화) — `MPVolumeView` 슬라이더 트릭이 iOS 16+에서 불안정하고 실사용 가치 낮아 삭제.
 
 ### MiniMsgPack 직접 구현
 외부 MessagePack 라이브러리 없이 자체 구현. Kronaby 프로토콜에서 사용하는 Map 타입 + 정수/바이너리만 필요하므로 완전한 MessagePack 스펙 불필요. 의존성 최소화 목적.
