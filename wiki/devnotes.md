@@ -1,4 +1,4 @@
-<!-- 최종 수정: 2026-04-27 -->
+<!-- 최종 수정: 2026-04-28 -->
 
 # 개발 노트
 
@@ -38,6 +38,22 @@ CoreData/SQLite 없이 전부 UserDefaults + Codable. 설정 데이터 규모가
 - `/home/usbin/claudedocs/keepnaby/docs/reverse-engineering-log.md` — 명령 발견 과정 로그
 - `/home/usbin/claudedocs/keepnaby/docs/ble-capture-analysis.md` — 원시 BLE 패킷 분석
 - `/home/usbin/claudedocs/keepnaby/docs/bt_*.txt` — 원시 덤프 파일들
+
+---
+
+## 설계 결정: 모스모드 중 크라운 비활성화 (2026-04-28)
+
+모스모드 진입 시 `complications([5, 15, 18])` 전송으로 크라운 complication을 none(15)으로 임시 비활성화. 종료 시 `UserDefaults["kronaby_crown_mode"]`로 복원.
+
+**이유**: 모스 입력 중 실수로 크라운을 건드리면 할당된 complication(타이머 등)이 펌웨어 레벨에서 실행됨. 앱이 버튼 이벤트를 무시해도 펌웨어 자체 동작은 막을 수 없어 complication 자체를 일시 해제하는 방식 선택.
+
+## 미확인 현상: 모스모드 중 바늘 다회전 역방향 움직임 (2026-04-28)
+
+**현상**: 모스 입력 중 특정 버튼 시퀀스 후 시침·분침이 1/60씩 반시계방향으로 여러 바퀴 회전 후 자연 종료. 11시 방향 정렬 후 계속 움직이다 멈춤. 캘리브레이션 미복원.
+
+**현재 추정**: 앱이 recalibrate 모드를 유지하는 동안 펌웨어 native calibration 루틴이 인터럽트된 것으로 의심. 11시(=position 55) 정렬은 공식 앱 calibration home position과 일치 (`stepper_goto([0,55]), [1,55]`). 재현 미성공.
+
+**미해결**: 정확한 트리거 조건 불명. 추가 재현 시 keepnaby 로그 + 버튼 시퀀스 기록 필요.
 
 ---
 
