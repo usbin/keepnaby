@@ -194,9 +194,13 @@ final class ButtonActionManager: ObservableObject {
     // MARK: - Execute
 
     func handleButtonEvent(button: Int, event: Int) {
-        // 폰 찾기 재생 중엔 어떤 버튼 입력이든 정지로 흡수 — 매핑된 액션은 실행하지 않음
+        // 폰 찾기 재생 중엔 어떤 버튼 입력이든 정지로 흡수 — 매핑된 액션은 실행하지 않음.
+        // event 12("길게 누름 끝")는 release artifact이므로 제외 — 길게 누름으로 폰 찾기를
+        // 시작한 직후 손을 뗄 때 자기 자신을 즉시 정지시키는 것을 방지.
         if isFindMyPhonePlaying {
-            stopFindMyPhone()
+            if event != 12 {
+                stopFindMyPhone()
+            }
             return
         }
 

@@ -23,14 +23,14 @@
 매너모드/무음 스위치 ON 상태에서도 알람 사운드가 나도록 다음 조합을 사용:
 
 1. `AVAudioSession` 카테고리 = `.playback` — 무음 스위치 무시 (음악 앱과 동일)
-2. 번들된 `Sources/Resources/alarm.wav` (880Hz 0.4s ON + 0.3s OFF, 1사이클 약 30KB) 를 `AVAudioPlayer` 로 무한 루프
+2. 번들된 `Sources/Resources/alarm.wav` (800Hz 0.2s + 1000Hz 0.2s + 0.3s 무음, 두 톤 교차 사이렌 + tanh soft-clip 고조파, 진폭 0.95, 약 30KB) 를 `AVAudioPlayer` 로 무한 루프
 3. `Info.plist > UIBackgroundModes` 에 `audio` 추가 — 시계 버튼 BLE 트리거가 보통 앱 백그라운드 상태에서 발생하므로 필요
 
 **기존 버그**: `/System/Library/Audio/UISounds/alarm.caf` 직접 경로는 iOS 앱 샌드박스에서 접근 불가 → `AVAudioPlayer` 생성이 항상 실패 → catch 폴백의 `AudioServicesPlayAlertSound(1005)` 가 매너모드를 존중해서 진동만 발생했음.
 
-**제거된 옵션**: `findphone_max_volume` (시스템 볼륨 강제 최대화) — `MPVolumeView` 슬라이더 트릭이 iOS 16+에서 불안정하고 실사용 가치 낮아 삭제.
+**제거된 옵션**: `findphone_max_volume` (시스템 볼륨 강제 최대화) — `MPVolumeView` 슬라이더 트릭이 iOS 16+에서 불안정하고 실사용 가치 낮아 삭제. iOS 는 시스템 볼륨을 코드로 안정적으로 설정할 공개 API를 제공하지 않음 — 대신 사운드 파일 자체의 진폭을 0.95 까지 끌어올리고 두 톤 교차 + soft-clip 고조파로 체감 음량을 키우는 방향으로 대응.
 
-**정지 동작**: 폰 찾기 재생 중엔 `handleButtonEvent` 진입부에서 어떤 버튼 입력이든 흡수해 즉시 정지. 알람이 울릴 때 사용자의 버튼 입력 의도는 거의 100% "꺼라"이므로 매핑된 액션이 잘못 실행되는 위험을 차단.
+**정지 동작**: 폰 찾기 재생 중엔 `handleButtonEvent` 진입부에서 어떤 버튼 입력이든 흡수해 즉시 정지. 알람이 울릴 때 사용자의 버튼 입력 의도는 거의 100% "꺼라"이므로 매핑된 액션이 잘못 실행되는 위험을 차단. 단 `eventType == 12`("길게 누름 끝") 는 펌웨어가 길게 누름 release 시 자동 발사하는 artifact 이벤트라 제외 — 안 그러면 긴 클릭에 폰 찾기를 매핑한 경우 손 떼는 즉시 자기 자신을 정지시킴.
 
 ### MiniMsgPack 직접 구현
 외부 MessagePack 라이브러리 없이 자체 구현. Kronaby 프로토콜에서 사용하는 Map 타입 + 정수/바이너리만 필요하므로 완전한 MessagePack 스펙 불필요. 의존성 최소화 목적.
