@@ -14,6 +14,7 @@ enum ButtonActionType: String, Codable, CaseIterable {
     case musicPrevious = "music_previous"
     case recordLocation = "record_location"
     case randomDice = "random_dice"
+    case drinkWater = "drink_water"
     case iftttWebhook = "ifttt_webhook"
     case shortcut = "shortcut"
     case urlRequest = "url_request"
@@ -30,6 +31,7 @@ enum ButtonActionType: String, Codable, CaseIterable {
         case .musicPrevious: return "음악: 이전 곡"
         case .recordLocation: return "위치 기록"
         case .randomDice: return "랜덤 주사위"
+        case .drinkWater: return "물 섭취 기록"
         case .iftttWebhook: return "IFTTT Webhook"
         case .shortcut: return "단축어 실행 (앱 열림)"
         case .urlRequest: return "URL 요청"
@@ -42,6 +44,7 @@ enum ButtonActionType: String, Codable, CaseIterable {
         case .findPhone, .showDate, .showBattery, .showSteps: return "기본"
         case .musicPlayPause, .musicNext, .musicPrevious: return "음악"
         case .recordLocation, .randomDice: return "재미"
+        case .drinkWater: return "건강"
         case .iftttWebhook, .shortcut, .urlRequest: return "고급"
         }
     }
@@ -77,6 +80,7 @@ struct ButtonAction: Codable, Equatable {
         case .musicPrevious: return "이전 곡"
         case .recordLocation: return "위치 기록"
         case .randomDice: return "주사위 (1시–\(diceMax)시)"
+        case .drinkWater: return "물 섭취"
         case .iftttWebhook: return "IFTTT: \(iftttEventName)"
         case .shortcut: return "단축어: \(shortcutName)"
         case .urlRequest: return label.isEmpty ? "URL 요청" : label
@@ -159,6 +163,7 @@ final class ButtonActionManager: ObservableObject {
     var locationRecorder: LocationRecorder?
     var bleManager: BLEManager?
     var historyManager: ActionHistoryManager?
+    var waterIntakeManager: WaterIntakeManager?
 
     private static let mappingsKey = "button_mappings"
     private static let iftttKeyKey = "ifttt_webhook_key"
@@ -259,6 +264,8 @@ final class ButtonActionManager: ObservableObject {
             locationRecorder?.recordCurrentLocation()
         case .randomDice:
             rollRandomDice(max: max(2, action.diceMax))
+        case .drinkWater:
+            recordWaterIntake()
         case .iftttWebhook:
             fireIFTTT(eventName: action.iftttEventName)
         case .shortcut:
@@ -274,6 +281,18 @@ final class ButtonActionManager: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in
             self?.stopFindMyPhone()
         }
+    }
+
+    private func recordWaterIntake() {
+        guard let manager = waterIntakeManager else {
+            bleManager?.log("물 섭취 기록 실패: WaterIntakeManager 없음")
+            return
+        }
+        let amount = manager.standardAmountML
+        manager.recordDrink()
+        // 짧은 진동 1회 — 기록 확인 피드백
+        bleManager?.sendCommand(name: "vibrator_start", value: [120])
+        bleManager?.log("물 섭취 +\(amount)ml → 오늘 \(manager.todayTotal())ml / \(manager.dailyGoalML)ml")
     }
 
     func stopFindMyPhone() {

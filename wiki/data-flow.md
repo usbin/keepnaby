@@ -1,4 +1,4 @@
-<!-- 최종 수정: 2026-04-27 -->
+<!-- 최종 수정: 2026-05-08 -->
 
 # 데이터 흐름
 
@@ -74,6 +74,8 @@ ButtonActionManager.handleEvent(event)
   │    └─ CLLocationManager → 역지오코딩 → 저장
   ├─ FindMyPhone.trigger()
   ├─ MorseDecoder 모드 진입
+  ├─ WaterIntakeManager.recordDrink()
+  │    └─ standardAmountML 만큼 추가 + 진동 1회 피드백
   └─ 커스텀 URL Webhook
 ```
 
@@ -81,21 +83,35 @@ ButtonActionManager.handleEvent(event)
 
 ## ANCS 알림 흐름
 
+ANCS 는 iPhone↔워치 사이의 **별도 GATT 연결** — 워치 펌웨어가 iOS 의 ANCS 서비스(`7905F431...`)에 client 로 직접 구독한다. Keepnaby 앱은 그 채널을 직접 관찰하지 못하고, 워치 펌웨어에 `ancs_filter` 명령으로 필터 슬롯만 설정한다.
+
 ```
-iOS 알림 발생 (카카오톡, 전화 등)
+iOS 알림 발생 → iPhone ANCS 서비스 → 워치 펌웨어가 직접 수신
+                                       │ (앱 미경유)
+                                       ▼
+                              펌웨어가 ancs_filter 슬롯과 매칭
+                                       │
+                                       ▼
+                              매칭된 슬롯 (1·2·3) 진동 실행
+```
+
+ANCS 끊김 자동 복구 (range loss → 재연결 시점에 자동 escalation, `BLEManager`):
+
+```
+didDisconnectPeripheral (signal lost)
+  │  disconnectTimestamp = now
+  ▼
+... (out of range) ...
   │
   ▼
-CoreBluetooth ANCS 서비스 → BLEManager 수신
-  │  앱 번들 ID 포함
+didConnect (back in range) + characteristic 재발견 완료
+  │  elapsed = now - disconnectTimestamp
   ▼
-NotificationMappingManager.filter(bundleId)
-  │  UserDefaults 매핑 조회 → 진동 슬롯(1·2·3) 결정
-  ▼
-KronabyProtocol.vibrate(slot)
-  │
-  ▼
-워치 진동 패턴 실행
+elapsed ≥ 60s   → Tier 2 자동 (NotificationMappingManager.applyToWatch — ancs_filter 35슬롯 재전송)
+elapsed ≥ 1h    → Tier 2 + 10초 후 Tier 3 (CBCentralManager 재생성, BT off/on 흉내)
 ```
+
+수동 복구 버튼은 메뉴에 Tier 1/2/3 분리해 노출 — 효과 검증용.
 
 ---
 

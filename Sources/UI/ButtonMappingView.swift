@@ -215,6 +215,9 @@ func actionPicker(selection: Binding<ButtonAction>) -> some View {
             Text("위치 기록").tag(ButtonActionType.recordLocation)
             Text("랜덤 주사위").tag(ButtonActionType.randomDice)
         }
+        Section("건강") {
+            Text("물 섭취 기록").tag(ButtonActionType.drinkWater)
+        }
         Section("고급") {
             Text("IFTTT Webhook").tag(ButtonActionType.iftttWebhook)
             Text("단축어 실행 (앱 열림)").tag(ButtonActionType.shortcut)

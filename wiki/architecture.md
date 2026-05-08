@@ -1,4 +1,4 @@
-<!-- 최종 수정: 2026-05-01 -->
+<!-- 최종 수정: 2026-05-08 -->
 
 # 아키텍처
 
@@ -40,6 +40,7 @@ keepnaby/
 │  AlarmManager  ·  LocationRecorder                      │
 │  ActionHistoryManager  ·  MorseDecoder                  │
 │  MusicController  ·  FindMyPhone                        │
+│  WaterIntakeManager  (물 섭취 기록)                       │
 └──────────────────────┬──────────────────────────────────┘
                        │ 명령 인코딩 요청
 ┌──────────────────────▼──────────────────────────────────┐

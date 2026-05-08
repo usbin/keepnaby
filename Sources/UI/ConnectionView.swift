@@ -6,6 +6,7 @@ struct ConnectionView: View {
     @EnvironmentObject var locationRecorder: LocationRecorder
     @EnvironmentObject var notificationMappingManager: NotificationMappingManager
     @EnvironmentObject var historyManager: ActionHistoryManager
+    @EnvironmentObject var waterIntakeManager: WaterIntakeManager
     @State private var showHelp = false
     @State private var showLog = false
     @State private var showForgetConfirm = false
@@ -18,6 +19,7 @@ struct ConnectionView: View {
     @State private var showAlarm = false
     @State private var showWatchSettings = false
     @State private var showActionHistory = false
+    @State private var showWaterIntake = false
 
     var body: some View {
         NavigationStack {
@@ -78,14 +80,15 @@ struct ConnectionView: View {
                 if ble.connectionState == .connected {
                     ScrollView {
                         VStack(spacing: 16) {
-                            // MARK: - 자주 사용 (알람 + 위치)
+                            // MARK: - 자주 사용 (알람 + 위치 + 물)
                             VStack(alignment: .leading, spacing: 6) {
                                 Text("자주 사용")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
-                                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
                                     menuButton("무음 알람", icon: "alarm") { showAlarm = true }
                                     menuButton("위치 기록", icon: "mappin.and.ellipse") { showLocationHistory = true }
+                                    menuButton("물 섭취", icon: "drop.fill") { showWaterIntake = true }
                                 }
                             }
 
@@ -221,9 +224,18 @@ struct ConnectionView: View {
                     }
                     if ble.connectionState == .connected {
                         Divider()
-                        Button { ble.forceFullReconnect() } label: {
-                            Label("ANCS 재연결", systemImage: "arrow.clockwise.circle")
+                        Section("연결 복구") {
+                            Button { ble.forceFullReconnect() } label: {
+                                Label("Tier 1 — 가벼운 재연결", systemImage: "arrow.clockwise")
+                            }
+                            Button { ble.reconnectAndReapplyFilters() } label: {
+                                Label("Tier 2 — ANCS 필터 재적용", systemImage: "arrow.clockwise.circle")
+                            }
+                            Button { ble.restartCentralManager() } label: {
+                                Label("Tier 3 — 전체 재시작 (강력)", systemImage: "arrow.triangle.2.circlepath.circle.fill")
+                            }
                         }
+                        Divider()
                         Button { ble.disconnect() } label: {
                             Label("연결 해제", systemImage: "wifi.slash")
                         }
@@ -282,6 +294,13 @@ struct ConnectionView: View {
             .sheet(isPresented: $showActionHistory) {
                 ActionHistoryView()
                     .environmentObject(historyManager)
+            }
+            .sheet(isPresented: $showWaterIntake) {
+                NavigationStack {
+                    WaterIntakeView()
+                        .environmentObject(waterIntakeManager)
+                        .navigationBarItems(trailing: Button("닫기") { showWaterIntake = false })
+                }
             }
         }
     }

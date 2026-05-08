@@ -1,4 +1,4 @@
-<!-- 최종 수정: 2026-05-01 -->
+<!-- 최종 수정: 2026-05-08 -->
 
 # 개발 노트
 
@@ -9,6 +9,14 @@
 - **원인**: CoreBluetooth idle timeout 후 GATT 캐시 만료
 - **해결**: 전체 GATT 재협상 로직 추가
 - 상세: `docs/resolved/issue-ancs-drops-after-day.md`
+
+### ANCS range-loss 후 끊김 — 자동 복구 (2026-05-08)
+- **증상**: 시계와 휴대폰이 BLE 신호 닿는 거리에서 일정 시간 이상 떨어졌다 다시 가까워질 때 ANCS 구독이 안 살아남. BT off/on 으로만 복구되던 것.
+- **2026-05-08 대응**: `BLEManager` 가 `didDisconnect` 시점부터의 경과 시간 (`disconnectTimestamp`) 을 기반으로 재연결 직후 자동 escalation:
+  - 60초 이상 끊김 → Tier 2 자동 (`NotificationMappingManager.applyToWatch` — ancs_filter 35슬롯 재전송, 비용 ~3.5초 BLE)
+  - 1시간 이상 끊김 → Tier 2 + 10초 뒤 Tier 3 (`CBCentralManager` 폐기·재생성 — BT off/on 흉내내는 가장 깊은 in-app 리셋)
+- **수동 복구**: 메뉴에 Tier 1/2/3 분리 노출 — 재발 시 어느 tier 에서 효과 있는지 사용자가 검증 가능.
+- **검증 어려움**: 앱이 ANCS 채널 자체를 관찰할 수 없음 (워치가 iPhone ANCS 서비스에 client 로 직접 구독, 앱 미경유). 따라서 자동 복구 효과는 "재발 빈도 감소" 로만 간접 측정.
 
 ### DND(방해 금지) 미작동 (해결됨 여부 불명확)
 - **증상**: 펌웨어 `dnd` 명령 전송 시 동작 불안정
@@ -68,6 +76,23 @@ CoreData/SQLite 없이 전부 UserDefaults + Codable. 설정 데이터 규모가
 **현재 추정**: 앱이 recalibrate 모드를 유지하는 동안 펌웨어 native calibration 루틴이 인터럽트된 것으로 의심. 11시(=position 55) 정렬은 공식 앱 calibration home position과 일치 (`stepper_goto([0,55]), [1,55]`). 재현 미성공.
 
 **미해결**: 정확한 트리거 조건 불명. 추가 재현 시 keepnaby 로그 + 버튼 시퀀스 기록 필요.
+
+---
+
+## 설계 결정: 물 섭취 기록 (2026-05-08)
+
+**구조**: `WaterIntakeManager` 가 단일 표준량(`standardAmountML`, default 200ml) + 일일 목표(`dailyGoalML`, default 2000ml) + 90일 기록을 UserDefaults 에 보관. `ButtonAction.drinkWater` 액션이 트리거되면 표준량만큼 추가하고 진동 1회 피드백.
+
+**설계 결정 이유**
+- 단일 표준량으로 한 이유: ButtonAction 마다 ml 을 달리 두면 매핑이 복잡해지고, 사용자 의도가 "1잔" 단위라 단일 양으로 충분.
+- 90일 retention: 무한 누적 방지 + 7일 차트 + 가벼운 통계 정도면 충분.
+- 기록 삭제: 잘못 눌렀을 때(주머니에 넣고 누름 등) 되돌릴 수 있어야 함 → swipe-to-delete 지원.
+
+**관련 파일**
+- `Sources/Features/WaterIntakeManager.swift`
+- `Sources/UI/WaterIntakeView.swift`
+- `Sources/Features/ButtonActionManager.swift` — `.drinkWater` enum + dispatch
+- `Sources/UI/ButtonMappingView.swift` — picker "건강" 섹션
 
 ---
 

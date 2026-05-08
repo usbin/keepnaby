@@ -136,9 +136,18 @@ final class BLEManager: NSObject, ObservableObject {
     private var intentionalDisconnect = false
     private var disconnectTimestamp: Date?
     var onConnected: (() -> Void)?
+    /// KeepnabyApp 에서 NotificationMappingManager.applyToWatch(ble:) 를 호출하는 클로저.
+    /// BLEManager 가 NotificationMappingManager 를 직접 import 하지 않기 위함 — 의존성 역전.
+    var notificationMappingApplier: (() -> Void)?
 
-    /// 장시간 끊김 임계값 — 이보다 오래 끊겼다 재연결되면 ANCS 재구독 유도 목적으로 강제 full reconnect 수행
-    private static let longDisconnectThreshold: TimeInterval = 5 * 60
+    /// Tier 2 자동 임계값 — 이보다 오래 끊겼다 재연결되면 자동으로 ANCS 필터 35슬롯 재전송.
+    /// 60초로 잡은 이유: 잠깐 신호 끊김(방 이동 등)에는 트리거하지 않으면서, 진짜 떨어졌다 돌아온
+    /// 케이스(주로 ANCS 세션 손실 시점)는 거의 다 잡음. 비용 ~3.5초 BLE 체팅.
+    private static let tier2DisconnectThreshold: TimeInterval = 60
+    /// Tier 3 자동 임계값 — 이보다 오래 끊겼다 재연결되면 추가로 CBCentralManager 자체를 재생성.
+    /// 1시간 이상 떨어져 있었으면 iOS 측 ANCS 컨텍스트가 GC 되어 가벼운 방법으론 안 살아날
+    /// 가능성이 높아짐 → BT off/on 흉내내는 가장 공격적인 복구.
+    private static let tier3DisconnectThreshold: TimeInterval = 60 * 60
 
     func disconnect() {
         intentionalDisconnect = true
@@ -148,19 +157,66 @@ final class BLEManager: NSObject, ObservableObject {
         }
     }
 
-    /// 수동/자동 ANCS 복구용 — 페리퍼럴 연결을 완전히 끊고 자동 재연결을 유도.
-    /// Bluetooth off/on 을 앱 레벨에서 흉내낸 것. 워치 쪽에서 GATT 재협상이 일어나며
-    /// ANCS 서비스 구독도 다시 이루어질 가능성이 높음.
+    /// Tier 1 — 가벼운 재연결.
+    /// 페리퍼럴 연결을 끊고 자동 재연결 유도. 서비스/특성 재발견 + Notify 재구독은 일어나지만
+    /// iOS BLE 스택의 ANCS 세션 컨텍스트는 그대로 → 이미 ANCS 가 꺼진 상황엔 대부분 효과 없음.
     func forceFullReconnect() {
         guard let peripheral = peripheral else {
             log("forceFullReconnect: peripheral 없음")
             return
         }
-        log("강제 재연결 시작 (ANCS 복구 시도)")
+        log("[Tier 1] 가벼운 재연결")
         // intentionalDisconnect 는 false 로 유지 → didDisconnect 핸들러가 자동 재연결
-        // disconnectTimestamp 가 직후 재설정되지만 gap 이 짧아 재재연결은 트리거되지 않음
         centralManager.cancelPeripheralConnection(peripheral)
     }
+
+    /// Tier 2 — Tier 1 + ANCS 필터 재적용.
+    /// 워치 펌웨어가 ancs_filter 명령을 다시 받으면 iOS ANCS 서비스 재구독을 트리거할 가능성.
+    /// 자동 escalation 으로도 동작 (모든 unintentional reconnect 직후) — `onConnected` 콜백 참고.
+    func reconnectAndReapplyFilters() {
+        guard let peripheral = peripheral else {
+            log("reconnectAndReapplyFilters: peripheral 없음")
+            return
+        }
+        log("[Tier 2] 재연결 + ANCS 필터 재적용 예약")
+        pendingFilterReapplyAfterReconnect = true
+        centralManager.cancelPeripheralConnection(peripheral)
+    }
+
+    /// Tier 3 — CBCentralManager 인스턴스 자체를 폐기·재생성.
+    /// iOS 의 BLE 스택을 앱 프로세스 안에서 가능한 가장 깊게 리셋 — Bluetooth off/on 에 가장 가까운 in-app 등가물.
+    /// `cancelPeripheralConnection` 만 시도되던 이전 복구와 다른 신규 시도.
+    func restartCentralManager() {
+        log("[Tier 3] CBCentralManager 재생성 시작")
+        intentionalDisconnect = true  // 자동 재연결 차단 — 새 central 이 직접 다시 연결
+        if let peripheral = peripheral {
+            centralManager.cancelPeripheralConnection(peripheral)
+        }
+        centralManager.stopScan()
+        centralManager.delegate = nil
+        // 기존 참조 해제
+        peripheral = nil
+        commandChar = nil
+        notifyChar = nil
+        connectionState = .disconnected
+
+        // 0.8s 지연 — iOS 가 내부 BLE 스택 상태를 정리할 시간을 줌.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+            guard let self else { return }
+            self.intentionalDisconnect = false
+            self.pendingFilterReapplyAfterReconnect = true
+            self.centralManager = CBCentralManager(
+                delegate: self,
+                queue: .main,
+                options: [CBCentralManagerOptionRestoreIdentifierKey: Self.restoreIdentifier]
+            )
+            self.log("[Tier 3] 새 CBCentralManager 생성 — poweredOn 시 자동 재연결")
+        }
+    }
+
+    /// 재연결 직후 1회 ANCS 필터를 재적용해야 하는지 플래그.
+    /// Tier 2/3 트리거 또는 자동 escalation (장시간 끊김) 후 set, completeSetup/재연결 분기에서 소비.
+    private var pendingFilterReapplyAfterReconnect = false
 
     func forgetDevice() {
         disconnect()
@@ -499,13 +555,19 @@ extension BLEManager: CBPeripheralDelegate {
                 log("저장된 commandMap 복원 (\(savedMap.count)개)")
                 connectionState = .connected
 
-                // 장시간 끊김 후 재연결이면 ANCS 구독이 끊겼을 가능성이 높음 →
-                // 짧은 지연 후 강제 full reconnect 수행 (Bluetooth off/on 재현)
-                let shouldRefreshAncs: Bool = {
-                    guard let t = disconnectTimestamp else { return false }
-                    return Date().timeIntervalSince(t) >= Self.longDisconnectThreshold
+                // 끊긴 시간 기준으로 자동 escalation 결정.
+                // - ≥ 60s  → Tier 2 (ANCS 필터 35슬롯 재전송)
+                // - ≥ 1h   → Tier 2 + Tier 3 (CBCentralManager 재생성)
+                let elapsed: TimeInterval = {
+                    guard let t = disconnectTimestamp else { return 0 }
+                    return Date().timeIntervalSince(t)
                 }()
                 disconnectTimestamp = nil
+
+                let shouldReapplyFilters = pendingFilterReapplyAfterReconnect
+                    || elapsed >= Self.tier2DisconnectThreshold
+                let shouldRestartCentral = elapsed >= Self.tier3DisconnectThreshold
+                pendingFilterReapplyAfterReconnect = false
 
                 // 초기 페어링과 동일하게 지연 후 명령 전송 — 펌웨어 안정화 대기
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
@@ -514,15 +576,23 @@ extension BLEManager: CBPeripheralDelegate {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                         self?.sendCommand(name: "config_base", value: [1, 1])
                     }
-                    self.log("재연결 완료!")
+                    self.log("재연결 완료! (끊긴 시간 \(Int(elapsed))s)")
                     BackgroundSyncScheduler.shared.scheduleAppRefresh()
                     self.onConnected?()
 
-                    // 장시간 끊김 후 재연결 → 2초 뒤 ANCS 복구용 강제 재연결
-                    if shouldRefreshAncs {
-                        self.log("장시간 끊김 감지 → 2초 후 ANCS 복구 재연결 예약")
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
-                            self?.forceFullReconnect()
+                    if shouldReapplyFilters {
+                        self.log("[자동 Tier 2] ANCS 필터 재적용 — 끊긴 시간 \(Int(elapsed))s ≥ \(Int(Self.tier2DisconnectThreshold))s")
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
+                            guard let self, self.connectionState == .connected else { return }
+                            self.notificationMappingApplier?()
+                        }
+                    }
+
+                    if shouldRestartCentral {
+                        // Tier 2 가 끝날 시간 정도 기다린 뒤 Tier 3 — 필터 재전송 BLE 트래픽과 겹치지 않게.
+                        self.log("[자동 Tier 3] 끊긴 시간 \(Int(elapsed))s ≥ 1h — CBCentralManager 재생성 예약 (10초 후)")
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 10.0) { [weak self] in
+                            self?.restartCentralManager()
                         }
                     }
                 }

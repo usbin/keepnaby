@@ -9,6 +9,7 @@ struct KeepnabyApp: App {
     @StateObject private var locationRecorder = LocationRecorder()
     @StateObject private var notificationMappingManager = NotificationMappingManager()
     @StateObject private var actionHistoryManager = ActionHistoryManager()
+    @StateObject private var waterIntakeManager = WaterIntakeManager()
 
     var body: some Scene {
         WindowGroup {
@@ -18,18 +19,29 @@ struct KeepnabyApp: App {
                 .environmentObject(locationRecorder)
                 .environmentObject(notificationMappingManager)
                 .environmentObject(actionHistoryManager)
+                .environmentObject(waterIntakeManager)
                 .onAppear {
                     actionManager.locationRecorder = locationRecorder
                     actionManager.bleManager = bleManager
                     actionManager.historyManager = actionHistoryManager
+                    actionManager.waterIntakeManager = waterIntakeManager
                     locationRecorder.onRecorded = { [weak bleManager] in
                         bleManager?.sendCommand(name: "vibrator_start", value: [150])
                     }
 
-                    // 재연결 시 최소한의 명령만 전송 (설정은 펌웨어에 저장됨)
+                    // 재연결 시 BLEManager 가 끊긴 시간 기준으로 자동 escalation:
+                    //   60s+ → Tier 2 (ANCS 필터 재적용)
+                    //   1h+  → Tier 2 + Tier 3 (CBCentralManager 재생성)
+                    // BLEManager 가 NotificationMappingManager 를 직접 import 하지 않도록
+                    // 클로저로 적용 책임 위임.
                     bleManager.onConnected = { [weak bleManager] in
                         guard let ble = bleManager else { return }
-                        ble.log("연결 완료 — 최소 초기화만 전송")
+                        ble.log("연결 완료")
+                    }
+                    bleManager.notificationMappingApplier = { [weak notificationMappingManager, weak bleManager] in
+                        guard let mgr = notificationMappingManager,
+                              let ble = bleManager else { return }
+                        mgr.applyToWatch(ble: ble)
                     }
 
                     // 백그라운드 sync 알림 수신 → BLE keepalive 실행

@@ -1,4 +1,4 @@
-<!-- 최종 수정: 2026-05-01 -->
+<!-- 최종 수정: 2026-05-08 -->
 
 # 컴포넌트
 
@@ -49,6 +49,7 @@ Bluetooth State Restoration 활성화로 백그라운드 재연결 지원
 | `MorseDecoder.swift` | 모스 코드 ↔ 영문자·숫자 변환 테이블 (A-Z, 0-9) |
 | `MusicController.swift` | 음악 재생 제어 래퍼 (재생/일시정지/다음/이전) |
 | `FindMyPhone.swift` | 매너모드/무음 모드 무시하고 알람 사운드 재생 (`Resources/alarm.wav` 30s 루프). 재생 중 시계 어떤 버튼이든 누르면 즉시 정지 |
+| `WaterIntakeManager.swift` | 물 섭취 기록 (UserDefaults). 표준 1회량/일일 목표/90일 보관, today total·progress·삭제 API |
 
 ### 모스 입력 흐름
 
@@ -76,6 +77,7 @@ Bluetooth State Restoration 활성화로 백그라운드 재연결 지원
 | `ActionHistoryView.swift` | 버튼 이벤트 로그 조회·재실행 |
 | `TimeSettingView.swift` | 시간·타임존 수동 동기화 |
 | `ComplicationsView.swift` | 크라운 컴플리케이션 설정 (날짜·걸음·세계시·스톱워치) |
+| `WaterIntakeView.swift` | 물 섭취 진행도(Gauge), 표준량/목표 Stepper, 오늘 기록 swipe-delete, 최근 7일 합계 |
 
 ---
 
