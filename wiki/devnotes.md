@@ -25,6 +25,7 @@
 - **1차 대응 (앱 재진입 차단)**: 정상-모드 핸드 구동 액션 전용 단일 락 `isWatchHandSessionActive`(`beginWatchHandSession`/`endWatchHandSession`). `showDisplayOnWatch`·`rollRandomDice` 진입 시 락 확인·획득(+미연결 가드 — 락 데드락 방지), `exitRecalibrateAndSyncTime`의 datetime 전송 완료 후 해제. BLE write 무응답으로 종료 콜백이 안 와도 30초 워치독이 `endWatchHandSession` 호출로 강제 해제. 모스 경로(`isMorseMode` 분기)는 락 미보유 — 영향 없음.
 - **2차 대응 (펌웨어 알림 제스처 차단)**: 알림→바늘 이동은 펌웨어 동작이라 앱이 막을 유일한 레버가 `alert_assign`. 세션 진입 시 `alert_assign([0,0,0])`로 알림 제스처 억제, 종료 시 원복. 복원값은 `NotificationMappingManager.applyToWatch`/`AlarmManager.applyToWatch`가 alert_assign 전송 시마다 `UserDefaults["kronaby_last_alert_assign"]`에 영속한 마지막 값(없으면 [0,0,0] — 미설정 상태와 동일해 안전). 세션 중 사용자가 알림 설정 변경·Apply하면 키도 갱신돼 원복값이 따라감(begin 시점 캐시 아닌 end 시점 read). 비용: BLE write 2개(~50–60ms, 액션 5–10초 대비 무시 가능) + 세션(~5–10초) 중 도착 알림 진동/제스처 누락(의도된 트레이드오프 — "한 번에 한 동작" 정책과 일치).
 - **알림 제스처 vs recalibrate 세션 상호작용**: recalibrate(true) 모드 중 ANCS 알림 시 펌웨어가 제스처를 발화하는지는 캡처에 없음(RE 캡처의 알림→바늘은 전부 시각모드). 펌웨어엔 표시중 임의 위치(예: 4:20) 기억이 없어 알림 후 직전 위치로 복귀하는 일은 없음 — 최종 권위자는 종료 시 `datetime` 재전송(현재시각 복귀). 진짜 위험은 복귀가 아니라 세션 중 펌웨어가 hands를 옮긴 직후 시간추정 `recalibrate(false)`가 잘못된 위치를 영점으로 래치하는 것(메인 버그와 동일 메커니즘) → 2차 대응으로 차단.
+- **검증 상태 (2026-05-18)**: 1차 대응(재진입 차단) — 버튼 클릭 중 다음 클릭 무시 **실기 확인 완료** (v1.1.6 CI 빌드 success). 2차 대응(알림 제스처 억제) — 세션 중 알림 수신은 재현 난이도가 높아 **수일간 일상 사용 중 관찰 예정** (미확인).
 - **미해결(후속 PR 후보)**: `writeCompletionHandler` 단일 슬롯 → 큐/딕셔너리화, `recalibrate(false)`를 모터 완료 확인 기반으로 발사. `alert_assign([0,0,0])` 즉시 적용 여부·원복 타이밍 실기 검증 필요(문서는 "안 보내면 안 움직임"만 확인).
 
 ### DND(방해 금지) 미작동 (해결됨 여부 불명확)
