@@ -119,6 +119,7 @@ final class AlarmManager: ObservableObject {
             }
         }
         ble.sendCommand(name: "alert_assign", value: assignArray)
+        UserDefaults.standard.set(assignArray, forKey: NotificationMappingManager.lastAlertAssignKey)
         ble.log("alert_assign(\(assignArray))")
 
         // 2. 알람 데이터 전송

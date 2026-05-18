@@ -126,6 +126,9 @@ final class NotificationMappingManager: ObservableObject {
 
     private static let slotsKey = "kronaby_app_slots_v2"
     private static let customAppsKey = "kronaby_custom_apps_v1"
+    /// 마지막으로 펌웨어에 보낸 alert_assign 배열. 핸드 세션 중 알림 제스처를
+    /// [0,0,0]으로 잠시 끈 뒤 원복할 때 복원값 출처. 앱 재시작에도 살아남도록 영속.
+    static let lastAlertAssignKey = "kronaby_last_alert_assign"
 
     /// 큐레이션된 앱 목록 (BLE 캡처 기반 + 인기 앱)
     static let knownApps: [NotificationApp] = [
@@ -235,6 +238,7 @@ final class NotificationMappingManager: ObservableObject {
             assignArray[alarmSlot - 1] = 1
         }
         ble.sendCommand(name: "alert_assign", value: assignArray)
+        UserDefaults.standard.set(assignArray, forKey: Self.lastAlertAssignKey)
         ble.log("alert_assign(\(assignArray))")
         delay += 0.5
 

@@ -743,26 +743,42 @@ final class ButtonActionManager: ObservableObject {
     private var isWatchHandSessionActive = false
     /// 락이 끼이는 것(BLE write 무응답 등으로 종료 콜백 미발화) 방지용 안전 타이머.
     private var watchSessionWatchdog: DispatchWorkItem?
+    /// 이번 세션에서 알림 제스처를 [0,0,0]으로 억제했는지. 억제한 세션의 종료에서만 원복.
+    private var didSuppressAlerts = false
 
-    /// 핸드 세션 진입 — 락 설정 + 30초 워치독 무장.
+    /// 핸드 세션 진입 — 락 설정 + 알림 제스처 억제 + 30초 워치독 무장.
+    /// 알림→바늘 이동은 펌웨어 동작이라 앱이 막을 유일한 레버는 alert_assign 끄기.
+    /// 세션 중 펌웨어가 바늘을 건드려 영점이 깨지는 것을 원천 차단.
     private func beginWatchHandSession() {
         isWatchHandSessionActive = true
+        if !didSuppressAlerts {
+            bleManager?.sendCommand(name: "alert_assign", value: [0, 0, 0])
+            didSuppressAlerts = true
+            bleManager?.log("핸드 세션 — 알림 제스처 억제 alert_assign([0,0,0])")
+        }
         watchSessionWatchdog?.cancel()
         let wd = DispatchWorkItem { [weak self] in
             guard let self, self.isWatchHandSessionActive else { return }
             self.bleManager?.log("핸드 세션 워치독 — 30s 초과, 락 강제 해제")
-            self.isWatchHandSessionActive = false
-            self.watchSessionWatchdog = nil
+            self.endWatchHandSession()
         }
         watchSessionWatchdog = wd
         DispatchQueue.main.asyncAfter(deadline: .now() + 30, execute: wd)
     }
 
-    /// 핸드 세션 종료 — 락 해제 + 워치독 해제. (락 미보유 경로에서 호출돼도 무해.)
+    /// 핸드 세션 종료 — 알림 제스처 원복 + 락 해제 + 워치독 해제.
+    /// 억제한 세션에서만 원복. 복원값은 마지막으로 보낸 alert_assign(없으면 [0,0,0]).
+    /// (락 미보유 경로에서 호출돼도 didSuppressAlerts=false라 무해.)
     private func endWatchHandSession() {
         watchSessionWatchdog?.cancel()
         watchSessionWatchdog = nil
         isWatchHandSessionActive = false
+        if didSuppressAlerts {
+            let restore = (UserDefaults.standard.array(forKey: NotificationMappingManager.lastAlertAssignKey) as? [Int]) ?? [0, 0, 0]
+            bleManager?.sendCommand(name: "alert_assign", value: restore)
+            bleManager?.log("핸드 세션 종료 — 알림 제스처 원복 alert_assign(\(restore))")
+            didSuppressAlerts = false
+        }
     }
 
     // MARK: - Random Dice
