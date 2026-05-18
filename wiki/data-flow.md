@@ -1,4 +1,4 @@
-<!-- 최종 수정: 2026-05-08 -->
+<!-- 최종 수정: 2026-05-18 -->
 
 # 데이터 흐름
 
@@ -69,6 +69,9 @@ ButtonActionManager.handleEvent(event)
   │  10가지 조합 매핑 조회 (UserDefaults)
   ▼
 매핑된 액션 실행
+  ├─ 표시(날짜·배터리·걸음수)·주사위 → 핸드 세션 락 (한 번에 하나)
+  │    └─ begin: alert_assign([0,0,0]) 억제 → recalibrate(true) → 바늘 구동
+  │       end: recalibrate(false) → datetime → alert_assign 원복
   ├─ MusicController (재생·일시정지·다음·이전)
   ├─ LocationRecorder.capture()
   │    └─ CLLocationManager → 역지오코딩 → 저장
@@ -92,8 +95,10 @@ iOS 알림 발생 → iPhone ANCS 서비스 → 워치 펌웨어가 직접 수�
                               펌웨어가 ancs_filter 슬롯과 매칭
                                        │
                                        ▼
-                              매칭된 슬롯 (1·2·3) 진동 실행
+                              매칭된 슬롯 (1·2·3) 진동 + 바늘 이동 실행
 ```
+
+알림→바늘 이동은 펌웨어 동작이며 `alert_assign`으로만 게이트된다(앱이 직접 못 막음). 표시/주사위 핸드 세션 동안 `ButtonActionManager`가 `alert_assign([0,0,0])`로 잠시 끄고 종료 시 마지막 값(`UserDefaults["kronaby_last_alert_assign"]`, 없으면 [0,0,0])으로 원복 — 세션 중 펌웨어가 바늘을 옮겨 영점이 깨지는 것을 차단(자세한 분석은 `devnotes.md`).
 
 ANCS 끊김 자동 복구 (range loss → 재연결 시점에 자동 escalation, `BLEManager`):
 

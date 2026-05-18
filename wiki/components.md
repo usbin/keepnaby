@@ -1,4 +1,4 @@
-<!-- 최종 수정: 2026-05-08 -->
+<!-- 최종 수정: 2026-05-18 -->
 
 # 컴포넌트
 
@@ -41,7 +41,7 @@ Bluetooth State Restoration 활성화로 백그라운드 재연결 지원
 
 | 파일 | 역할 |
 |------|------|
-| `ButtonActionManager.swift` | 버튼 이벤트 → 액션 매핑. 버튼 3개 × 이벤트 유형으로 10가지 조합 처리. 모스 디코더 통합. Webhook 프리셋 관리(base+path+params 조합) |
+| `ButtonActionManager.swift` | 버튼 이벤트 → 액션 매핑. 버튼 3개 × 이벤트 유형으로 10가지 조합 처리. 모스 디코더 통합. Webhook 프리셋 관리(base+path+params 조합). **핸드 세션 락**: 표시/주사위 액션은 `begin/endWatchHandSession`으로 한 번에 하나만 실행(재진입 무시) + 세션 중 `alert_assign([0,0,0])`로 펌웨어 알림 제스처 억제·종료 시 원복 |
 | `NotificationMappingManager.swift` | ANCS 필터링. 앱 번들 ID → 진동 패턴 슬롯(3개) 매핑 |
 | `AlarmManager.swift` | 알람 CRUD. 최대 8개, 요일 비트마스크로 워치 펌웨어에 전송 |
 | `LocationRecorder.swift` | GPS 캡처·역지오코딩. Google Maps·Naver지도·카카오맵 URL 스킴 생성 |
