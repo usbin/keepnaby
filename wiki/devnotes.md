@@ -1,4 +1,4 @@
-<!-- 최종 수정: 2026-05-08 -->
+<!-- 최종 수정: 2026-05-18 -->
 
 # 개발 노트
 
@@ -17,6 +17,13 @@
   - 1시간 이상 끊김 → Tier 2 + 10초 뒤 Tier 3 (`CBCentralManager` 폐기·재생성 — BT off/on 흉내내는 가장 깊은 in-app 리셋)
 - **수동 복구**: 메뉴에 Tier 1/2/3 분리 노출 — 재발 시 어느 tier 에서 효과 있는지 사용자가 검증 가능.
 - **검증 어려움**: 앱이 ANCS 채널 자체를 관찰할 수 없음 (워치가 iPhone ANCS 서비스에 client 로 직접 구독, 앱 미경유). 따라서 자동 복구 효과는 "재발 빈도 감소" 로만 간접 측정.
+
+### 빠른 연속 버튼 입력 시 바늘 영구 틀어짐 (2026-05-18 1차 대응)
+- **증상**: 정상 모드에서 표시/주사위 액션 버튼을 빠르게 연달아 누르면(예: 상단 1회→곧바로 2회) 바늘이 12시→엉뚱한 위치→그때부터 영구히 틀어짐.
+- **원인**: `ButtonActionManager`의 `showDate`/`showBattery`/`showSteps`에 재진입 가드 부재(주사위는 `isDiceRolling`만, 액션 간 보호 없음). 겹친 두 시퀀스가 ① 공유 `MotorTrack`(hour/minuteTrack) ② `BLEManager`의 단일 `writeCompletionHandler`(나중 호출이 덮어씀, `:294/:305`) ③ 시간추정 기반 `recalibrate(false)`(`exitRecalibrateAndSyncTime`, 물리 도착 미확인)를 동시에 짓밟음 → 펌웨어가 12시 아닌 위치를 영점으로 래치 → 이후 모든 시각·날짜 표시 오프셋.
+- **ANCS 가설은 기각**: 앱은 알림 수신 시 바늘을 움직이지 않음(펌웨어가 ANCS 직접 구독, 앱은 `ancs_filter` 진동 슬롯만). 펌웨어 자체 알림 제스처가 recalibrate 세션 중 끼면 2차 악화는 가능하나 주범 아님.
+- **1차 대응**: 정상-모드 핸드 구동 액션 전용 단일 락 `isWatchHandSessionActive` 추가(`beginWatchHandSession`/`endWatchHandSession`). `showDisplayOnWatch`·`rollRandomDice` 진입 시 락 확인·획득(+미연결 가드 추가), `exitRecalibrateAndSyncTime`의 datetime 전송 완료 후 해제. BLE write 무응답으로 종료 콜백이 안 와도 30초 워치독이 락을 강제 해제. 모스 경로(`isMorseMode` 분기)는 락 미보유 — 영향 없음.
+- **미해결(후속 PR 후보)**: `writeCompletionHandler` 단일 슬롯 → 큐/딕셔너리화, `recalibrate(false)`를 모터 완료 확인 기반으로 발사.
 
 ### DND(방해 금지) 미작동 (해결됨 여부 불명확)
 - **증상**: 펌웨어 `dnd` 명령 전송 시 동작 불안정

@@ -598,7 +598,13 @@ final class ButtonActionManager: ObservableObject {
             self.bleManager?.sendCommand(name: "recalibrate", value: false)
             self.isRecalibrateActive = false
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-                self?.sendCurrentDatetime()
+                guard let self else { return }
+                self.sendCurrentDatetime()
+                // datetime 전송까지 끝나면 핸드 세션 완료 — 락 해제.
+                // (모스 경로 등 락 미보유 호출에서도 무해.)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                    self?.endWatchHandSession()
+                }
             }
         }
     }
@@ -727,6 +733,38 @@ final class ButtonActionManager: ObservableObject {
         return max(1.0, Double(distance) * 0.1)
     }
 
+    // MARK: - 시계 핸드 세션 락
+
+    /// recalibrate 기반으로 바늘을 직접 구동하는 정상-모드 액션(표시/주사위) 진행 중 여부.
+    /// 이 액션들은 공유 MotorTrack · 단일 writeCompletionHandler · 시간추정 recalibrate(false)
+    /// 타이머를 쓰므로, 끝나기 전에 다음 액션이 끼면 명령 시퀀스가 서로 짓밟혀 펌웨어 영점이
+    /// 잘못 래치되고 바늘이 영구히 틀어진다. 단일 락으로 재진입을 차단 — 진행 중이면 새 액션 무시.
+    /// (모스 경로는 isMorseMode로 별도 분기되므로 이 락의 보호 대상 아님.)
+    private var isWatchHandSessionActive = false
+    /// 락이 끼이는 것(BLE write 무응답 등으로 종료 콜백 미발화) 방지용 안전 타이머.
+    private var watchSessionWatchdog: DispatchWorkItem?
+
+    /// 핸드 세션 진입 — 락 설정 + 30초 워치독 무장.
+    private func beginWatchHandSession() {
+        isWatchHandSessionActive = true
+        watchSessionWatchdog?.cancel()
+        let wd = DispatchWorkItem { [weak self] in
+            guard let self, self.isWatchHandSessionActive else { return }
+            self.bleManager?.log("핸드 세션 워치독 — 30s 초과, 락 강제 해제")
+            self.isWatchHandSessionActive = false
+            self.watchSessionWatchdog = nil
+        }
+        watchSessionWatchdog = wd
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30, execute: wd)
+    }
+
+    /// 핸드 세션 종료 — 락 해제 + 워치독 해제. (락 미보유 경로에서 호출돼도 무해.)
+    private func endWatchHandSession() {
+        watchSessionWatchdog?.cancel()
+        watchSessionWatchdog = nil
+        isWatchHandSessionActive = false
+    }
+
     // MARK: - Random Dice
 
     private var isDiceRolling = false
@@ -741,6 +779,10 @@ final class ButtonActionManager: ObservableObject {
     /// 펌웨어가 진입 시 바늘을 0으로 자동 이동 → onComplete 후 추적값 0으로 동기화.
     /// 시작 위치 불명(현재 시각 어디든) → 보수적으로 2초 대기.
     private func rollRandomDice(max: Int) {
+        guard !isWatchHandSessionActive else {
+            bleManager?.log("주사위 무시 — 핸드 세션 진행 중")
+            return
+        }
         guard !isDiceRolling else {
             bleManager?.log("주사위 중복 실행 무시")
             return
@@ -749,6 +791,7 @@ final class ButtonActionManager: ObservableObject {
             bleManager?.log("주사위 실패 — 미연결")
             return
         }
+        beginWatchHandSession()
         isDiceRolling = true
         bleManager?.sendCommand(name: "recalibrate", value: true, onComplete: { [weak self] in
             guard let self else { return }
@@ -913,6 +956,15 @@ final class ButtonActionManager: ObservableObject {
     private func showStepsOnWatch() { showDisplayOnWatch(.showSteps) }
 
     private func showDisplayOnWatch(_ type: ButtonActionType) {
+        guard !isWatchHandSessionActive else {
+            bleManager?.log("시계 표시 무시 (\(type.rawValue)) — 핸드 세션 진행 중")
+            return
+        }
+        guard bleManager?.connectionState == .connected else {
+            bleManager?.log("시계 표시 실패 (\(type.rawValue)) — 미연결")
+            return
+        }
+        beginWatchHandSession()
         let action = ButtonAction(type: type)
 
         // recalibrate(true) → onComplete 후 펌웨어가 0시로 이동하는 시간 대기 → 모터 트랙 0 동기화 → 표시.
