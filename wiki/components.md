@@ -1,4 +1,4 @@
-<!-- 최종 수정: 2026-05-18 -->
+<!-- 최종 수정: 2026-07-05 -->
 
 # 컴포넌트
 
@@ -48,7 +48,8 @@ Bluetooth State Restoration 활성화로 백그라운드 재연결 지원
 | `ActionHistoryManager.swift` | 버튼·모스 액션 실행 이력 저장 (최대 300건, UserDefaults) |
 | `MorseDecoder.swift` | 모스 코드 ↔ 영문자·숫자 변환 테이블 (A-Z, 0-9) |
 | `MusicController.swift` | 음악 재생 제어 래퍼 (재생/일시정지/다음/이전) |
-| `FindMyPhone.swift` | 매너모드/무음 모드 무시하고 알람 사운드 재생 (`Resources/alarm.wav` 30s 루프). 재생 중 시계 어떤 버튼이든 누르면 즉시 정지 |
+| `FindMyPhone.swift` | 매너모드/무음 모드 무시하고 알람 사운드 재생 (`Resources/alarm.wav` 30s 루프) + 1.2s 간격 진동 병행. 재생 직전 `SystemVolume`(비공개 `AVSystemController`)로 미디어 음량을 1.0 강제→정지 시 원복하여 음량 0 에서도 소리. 재생 중 시계 어떤 버튼이든 누르면 즉시 정지 |
+| `SystemVolume` (FindMyPhone.swift 내) | 비공개 `AVSystemController.setVolumeTo:forCategory:` 로 시스템 음량 강제. 사이드로드 개인 앱 전용, 전 구간 방어 처리 |
 | `WaterIntakeManager.swift` | 물 섭취 기록 (UserDefaults). 표준 1회량/일일 목표/90일 보관, today total·progress·삭제 API |
 
 ### 모스 입력 흐름

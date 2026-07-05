@@ -1,4 +1,4 @@
-<!-- 최종 수정: 2026-05-18 -->
+<!-- 최종 수정: 2026-07-05 -->
 
 # 개발 노트
 
@@ -46,7 +46,9 @@
 
 **기존 버그**: `/System/Library/Audio/UISounds/alarm.caf` 직접 경로는 iOS 앱 샌드박스에서 접근 불가 → `AVAudioPlayer` 생성이 항상 실패 → catch 폴백의 `AudioServicesPlayAlertSound(1005)` 가 매너모드를 존중해서 진동만 발생했음.
 
-**제거된 옵션**: `findphone_max_volume` (시스템 볼륨 강제 최대화) — `MPVolumeView` 슬라이더 트릭이 iOS 16+에서 불안정하고 실사용 가치 낮아 삭제. iOS 는 시스템 볼륨을 코드로 안정적으로 설정할 공개 API를 제공하지 않음 — 대신 사운드 파일 자체의 진폭을 0.95 까지 끌어올리고 두 톤 교차 + soft-clip 고조파로 체감 음량을 키우는 방향으로 대응.
+**볼륨 강제 재도입 (2026-07-05)**: 무음 스위치는 `.playback` 로 우회되지만 **미디어 음량이 0 이면** 여전히 무음이었음. 과거 `MPVolumeView` 슬라이더 트릭(구 `findphone_max_volume`)은 iOS 16+ 에서 불안정해 제거했었으나, 이번엔 비공개 `AVSystemController.setVolumeTo:forCategory:`(category `"Audio"`) 방식으로 재도입 (`SystemVolume` enum, `FindMyPhone.swift`). 재생 직전 음량을 1.0 으로 강제하고 `stop()` 에서 원래 값(`AVAudioSession.outputVolume` 로 저장)으로 복구. 비공개 API 라 iOS 업데이트로 깨질 수 있어 `NSClassFromString`/IMP 캐스팅 전 구간을 옵셔널 방어 — 실패해도 진동+일반재생으로 폴백. **사이드로드 개인 앱 전용** (App Store 서명엔 부적합). 정석인 Critical Alerts 는 `com.apple.developer.usernotifications.critical-alerts` entitlement 를 Apple 이 승인·프로파일에 실어줘야 해서 SideStore 무료 서명으론 불가.
+
+**진동 병행 (2026-07-05)**: 기존엔 진동이 catch 폴백에만 있었으나, `startVibration()` 으로 소리 성공/실패와 무관하게 1.2s 간격 `kSystemSoundID_Vibrate` 를 항상 병행. 음량 0 우회가 실패하는 극단 상황에서도 위치 파악 가능하도록.
 
 **정지 동작**: 폰 찾기 재생 중엔 `handleButtonEvent` 진입부에서 어떤 버튼 입력이든 흡수해 즉시 정지. 알람이 울릴 때 사용자의 버튼 입력 의도는 거의 100% "꺼라"이므로 매핑된 액션이 잘못 실행되는 위험을 차단. 단 `eventType == 12`("길게 누름 끝") 는 펌웨어가 길게 누름 release 시 자동 발사하는 artifact 이벤트라 제외 — 안 그러면 긴 클릭에 폰 찾기를 매핑한 경우 손 떼는 즉시 자기 자신을 정지시킴.
 

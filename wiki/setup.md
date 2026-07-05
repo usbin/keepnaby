@@ -1,4 +1,4 @@
-<!-- 최종 수정: 2026-04-27 -->
+<!-- 최종 수정: 2026-07-05 -->
 
 # 설치 및 빌드
 
@@ -48,10 +48,24 @@ Xcode에서 개발 팀을 개인 Apple ID로 설정 후 빌드.
 
 ## GitHub Actions CI 빌드
 
-`.github/workflows/build.yml`이 push 시 자동 실행됨.
+`.github/workflows/build.yml`.
 
-- 결과물: `.ipa` 아티팩트 (SideStore 호환)
-- Apple Developer 계정 불필요
+- **트리거**: `main` 에 push + `Sources/**`(또는 `project.yml`/워크플로) 변경 시. `pull_request`(main 대상) 및 수동 `workflow_dispatch` 도 가능. **태그 push 자체는 트리거가 아님** — 커밋 push 가 빌드를 돌린다.
+- 빌드: `macos-15` + Xcode 16.4, `xcodegen generate` → `xcodebuild`(Release, unsigned, `CODE_SIGNING_REQUIRED=NO`) → `Payload/` zip 으로 `.ipa` 패키징.
+- 결과물: `Keepnaby.ipa` 아티팩트(30일 보관) + **GitHub Release** 자동 생성. Apple Developer 계정 불필요.
+
+### 릴리스 명명·보존 (태그의 역할)
+릴리스 이름은 `git tag --points-at HEAD` 로 정해진다:
+- **해당 커밋에 수동 태그가 있으면** 그 태그 이름으로 릴리스 생성 → **영구 보존**.
+- 없으면 `build-<run번호>` 로 생성 → 자동 빌드는 **최신 1개만 남기고 삭제**(`build-*` 패턴).
+
+즉 실기 확인용 빌드를 남기려면 **커밋에 `vX.Y.Z` 태그를 달아 커밋과 함께 push** 한다. push 가 빌드를 트리거하고, 태그가 그 결과물을 명명·고정한다.
+
+```bash
+git commit -m "..."
+git tag vX.Y.Z
+git push && git push --tags
+```
 
 ---
 
