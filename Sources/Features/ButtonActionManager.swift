@@ -568,7 +568,11 @@ final class ButtonActionManager: ObservableObject {
         isMorseMode = false
         restoreCrownComplication()
         if action.type == .showDate || action.type == .showBattery || action.type == .showSteps {
-            executeDisplayAction(action)
+            if action.type == .showBattery {
+                withFreshBattery { [weak self] in self?.executeDisplayAction(action) }
+            } else {
+                executeDisplayAction(action)
+            }
         } else if action.type == .randomDice {
             rollDiceInRecalibrate(max: max(2, action.diceMax))
         } else {
@@ -921,14 +925,14 @@ final class ButtonActionManager: ObservableObject {
             return (month * 5 % 60, day)
         case .showBattery:
             let percent = bleManager?.batteryInfo?[0] ?? 0
-            let pos = Int(Double(percent) / 100.0 * 59.0)
+            let pos = Int(Double(percent) / 100.0 * 50.0)
             return (pos, pos)
         case .showSteps:
             let steps = bleManager?.stepsInfo?[0] ?? 0
             let goal = UserDefaults.standard.integer(forKey: "kronaby_step_goal_v2")
             let effectiveGoal = goal > 0 ? goal : 5000
             let ratio = min(Double(steps) / Double(effectiveGoal), 1.0)
-            let pos = Int(ratio * 59.0)
+            let pos = Int(ratio * 50.0)
             return (pos, pos)
         default:
             return (0, 0)
@@ -966,6 +970,21 @@ final class ButtonActionManager: ObservableObject {
         }
     }
 
+    /// 배터리 표시 직전 최신 vbat 값을 조회하고, 응답(또는 2초 타임아웃) 후 proceed 실행.
+    /// 세션/recalibrate 진입 이후 호출해야 대기 중 ANCS가 알림 제스처로 바늘을 건드리지 않음.
+    private func withFreshBattery(_ proceed: @escaping () -> Void) {
+        var done = false
+        let finish = { [weak self] in
+            guard !done else { return }
+            done = true
+            self?.bleManager?.onBatteryUpdate = nil
+            proceed()
+        }
+        bleManager?.onBatteryUpdate = { finish() }
+        bleManager?.requestBattery()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { finish() }
+    }
+
     /// 직접 버튼에서 호출 — recalibrate 진입부터 시작
     private func showDateOnWatch() { showDisplayOnWatch(.showDate) }
     private func showBatteryOnWatch() { showDisplayOnWatch(.showBattery) }
@@ -984,15 +1003,24 @@ final class ButtonActionManager: ObservableObject {
         let action = ButtonAction(type: type)
 
         // recalibrate(true) → onComplete 후 펌웨어가 0시로 이동하는 시간 대기 → 모터 트랙 0 동기화 → 표시.
-        bleManager?.sendCommand(name: "recalibrate", value: true, onComplete: { [weak self] in
+        let startRecalibrate = { [weak self] in
             guard let self else { return }
-            self.isRecalibrateActive = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            self.bleManager?.sendCommand(name: "recalibrate", value: true, onComplete: { [weak self] in
                 guard let self else { return }
-                self.resetMotorTracks()
-                self.executeDisplayAction(action)
-            }
-        })
+                self.isRecalibrateActive = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                    guard let self else { return }
+                    self.resetMotorTracks()
+                    self.executeDisplayAction(action)
+                }
+            })
+        }
+        // 배터리는 표시 직전 최신 vbat 조회 후 진행 (세션 진입 뒤라 대기 중 알림 억제됨).
+        if type == .showBattery {
+            withFreshBattery(startRecalibrate)
+        } else {
+            startRecalibrate()
+        }
     }
 
     // MARK: - IFTTT

@@ -17,6 +17,8 @@ final class BLEManager: NSObject, ObservableObject {
     @Published var commandMap: [String: Int] = [:]
     @Published var lastButtonEvent: ButtonEvent?
     @Published var batteryInfo: [Int]?  // [percentage, millivolts]
+    /// vbat 응답이 도착해 batteryInfo가 갱신되면 1회 발화 후 자동 해제. (배터리 표시 전 최신값 대기용)
+    var onBatteryUpdate: (() -> Void)?
     @Published var stepsInfo: [Int]?   // [steps, dayOfMonth] from steps_day
     @Published var debugLog: [String] = []
     @Published var settingsMap: [Int: String] = [:]  // map_settings 결과: {id: "name"}
@@ -778,6 +780,9 @@ extension BLEManager: CBPeripheralDelegate {
                 let percent = min(100, max(0, (mv - 2000) * 100 / 1000))
                 batteryInfo = [percent, mv]
                 log("배터리: \(mv)mV → \(percent)%")
+                let cb = onBatteryUpdate
+                onBatteryUpdate = nil
+                cb?()
             } else if let dict = decoded as? [Int: Any],
                       let stepsId = commandMap["steps_now"] {
                 // steps_now: 단일 int 또는 [steps, day] 배열
