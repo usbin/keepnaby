@@ -1,8 +1,15 @@
-<!-- 최종 수정: 2026-07-05 -->
+<!-- 최종 수정: 2026-07-14 -->
 
 # 개발 노트
 
 ## 알려진 이슈
+
+### 배터리 표시가 항상 12시 후 복귀 (2026-07-14 해결, v1.1.9)
+- **증상**: 배터리 확인 명령 시 시침·분침 모두 12시를 잠깐 가리키다 현재시각으로 복귀. 실제 잔량을 안 보여줌.
+- **원인**: 배터리 표시 경로(`showDisplayOnWatch`·모스 `runMorseExecution` → `executeDisplayAction` → `displayPositions`)가 `requestBattery()`(vbat) 없이 `bleManager.batteryInfo`를 읽음. `requestBattery`는 `ConnectionView`의 수동 메뉴에서만 호출돼, 명령 시점엔 대개 `batteryInfo == nil` → `percent = 0` → `pos = 0`(12시). 직전에 수동 조회를 안 했으면 항상 재현.
+- **부수 문제**: 스케일이 `× 59.0`(0~100%를 거의 한 바퀴 0~59마크에 매핑) → 사용자 기대(100% = "10" 눈금 = 50분)와 불일치.
+- **해결**: ① `BLEManager.onBatteryUpdate`(1회성 콜백) 추가 — vbat 응답으로 `batteryInfo` 갱신 시 발화. ② `ButtonActionManager.withFreshBattery(_:)` — 세션/recalibrate 진입 **이후** `requestBattery()` 보내고 콜백(또는 2초 타임아웃) 대기 후 표시. 세션 진입 뒤라 `alert_assign([0,0,0])` 억제가 이미 걸려 대기 중 ANCS가 바늘을 못 건드림(모스 경로는 recalibrate 유지 상태라 동일 보호). 직접·모스 배터리 경로 공통 적용. ③ 배터리·걸음수 스케일 `× 59.0 → × 50.0`(100% = "10" 눈금 50분, 40% = "4" 20분).
+- **검증 상태**: v1.1.9 CI success(컴파일 OK). 실기 동작(잔량 위치·모스 경로 vbat이 recalibrate 유지하는지) 사용자 테스트 대기.
 
 ### ANCS 24시간 후 끊김 (해결됨)
 - **증상**: BLE 연결 유지 중 24시간 이후 ANCS 알림 수신 중단

@@ -1,4 +1,4 @@
-<!-- 최종 수정: 2026-05-18 -->
+<!-- 최종 수정: 2026-07-14 -->
 
 # 데이터 흐름
 
@@ -72,6 +72,9 @@ ButtonActionManager.handleEvent(event)
   ├─ 표시(날짜·배터리·걸음수)·주사위 → 핸드 세션 락 (한 번에 하나)
   │    └─ begin: alert_assign([0,0,0]) 억제 → recalibrate(true) → 바늘 구동
   │       end: recalibrate(false) → datetime → alert_assign 원복
+  │    └─ 배터리 표시: 세션 진입 후 requestBattery(vbat) → onBatteryUpdate
+  │       콜백(또는 2초 타임아웃) 대기 → 최신 잔량으로 위치 계산 (직접·모스 경로 공통)
+  │    └─ 위치 스케일: 배터리·걸음수 = 값/100 × 50마크 (100% = "10" 눈금 50분)
   ├─ MusicController (재생·일시정지·다음·이전)
   ├─ LocationRecorder.capture()
   │    └─ CLLocationManager → 역지오코딩 → 저장
