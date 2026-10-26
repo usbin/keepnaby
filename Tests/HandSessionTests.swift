@@ -35,7 +35,9 @@ final class HandSessionTests: XCTestCase {
         manager.handleButtonEvent(button: 2, event: 2)  // 모스 진입
         wait(4)
         manager.handleButtonEvent(button: 2, event: 2)  // 빈 버퍼 종료
-        wait(0.5)
+        let deadline = Date().addingTimeInterval(3)
+        while manager.isMorseMode && Date() < deadline { wait(0.05) }  // 종료 시작(isMorseMode=false) 확인
+        XCTAssertFalse(manager.isMorseMode)
         manager.handleButtonEvent(button: 0, event: 1)  // 종료 진행 중 날짜 표시 시도
         wait(15)
         assertRecalibrateAlternates()
