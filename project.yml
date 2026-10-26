@@ -33,3 +33,18 @@ targets:
     dependencies:
       - framework: HealthKit.framework
         embed: false
+    scheme:
+      testTargets:
+        - KeepnabyTests
+
+  KeepnabyTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - Tests
+    dependencies:
+      - target: Keepnaby
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.usbin.keepnaby.tests

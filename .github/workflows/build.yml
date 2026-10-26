@@ -5,12 +5,14 @@ on:
     branches: [main]
     paths:
       - 'Sources/**'
+      - 'Tests/**'
       - 'project.yml'
       - '.github/workflows/build.yml'
   pull_request:
     branches: [main]
     paths:
       - 'Sources/**'
+      - 'Tests/**'
       - 'project.yml'
   workflow_dispatch:
 
@@ -35,6 +37,14 @@ jobs:
 
       - name: Generate Xcode project
         run: xcodegen generate
+
+      - name: Run unit tests
+        run: |
+          xcodebuild test \
+            -project Keepnaby.xcodeproj \
+            -scheme Keepnaby \
+            -destination 'platform=iOS Simulator,name=iPhone 16' \
+            -derivedDataPath build-test
 
       - name: Build for device (unsigned)
         run: |

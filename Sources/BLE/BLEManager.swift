@@ -294,8 +294,15 @@ final class BLEManager: NSObject, ObservableObject {
     }
 
     private var writeCompletionHandler: (() -> Void)?
+    /// 테스트용 — 설정 시 실제 BLE 전송 대신 명령을 가로채고 onComplete를 즉시 발화.
+    var commandInterceptor: ((String, Any) -> Void)?
 
     func sendCommand(name: String, value: Any, onComplete: (() -> Void)? = nil) {
+        if let intercept = commandInterceptor {
+            intercept(name, value)
+            if let onComplete { DispatchQueue.main.async(execute: onComplete) }
+            return
+        }
         guard let char = commandChar,
               let cmdId = commandMap[name] else {
             log("sendCommand 실패: \(name) (char=\(commandChar != nil), map=\(commandMap[name] as Any))")
