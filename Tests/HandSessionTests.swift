@@ -11,6 +11,7 @@ final class HandSessionTests: XCTestCase {
     override func setUp() {
         sent = []
         ble = BLEManager()
+        wait(1)  // CBCentralManager 초기 상태 콜백(시뮬레이터 = 미지원 → .bluetoothOff)이 먼저 지나가게
         ble.connectionState = .connected
         ble.commandInterceptor = { [unowned self] name, value in self.sent.append((Date(), name, value)) }
         manager = ButtonActionManager()
